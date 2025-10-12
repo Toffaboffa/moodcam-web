@@ -5,51 +5,183 @@
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>MoodCam (web)</title>
   <style>
-    html,body{margin:0;height:100%;background:#0b0f14;color:#e7effa;font-family:system-ui,Segoe UI,Roboto,sans-serif}
-    #stage{display:grid;place-items:center;height:100%}
-    /* Viktigt: omslag runt video+canvas måste vara relativt placerat */
-    .layer-wrap{
-      position:relative; display:inline-block; border-radius:12px; overflow:hidden;
-      box-shadow:0 12px 36px rgba(0,0,0,.5);
-      max-width:96vw; max-height:96vh;
-    }
-    video{display:block; width:100%; height:auto;}
-    /* Canvas ligger ovanpå videon */
-    canvas{
-      position:absolute; inset:0; width:100%; height:100%;
-      pointer-events:none; /* klick går igenom */
-    }
-    .warn{position:fixed;left:10px;bottom:10px;font-size:12px;opacity:.65}
-    .btn{position:fixed;top:10px;left:10px;background:#111827;border:1px solid #1f2937;color:#e7effa;
-         padding:8px 12px;border-radius:8px;cursor:pointer}
+    :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
+    html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,Segoe UI,Roboto,sans-serif}
+    #stage{display:grid;grid-template-columns:1fr auto;gap:16px;height:100%;align-items:center;justify-items:center;padding:12px}
+    .layer-wrap{position:relative;display:inline-block;border-radius:12px;overflow:hidden;box-shadow:0 12px 36px rgba(0,0,0,.5);max-width:96vw;max-height:96vh}
+    video{display:block;width:100%;height:auto}
+    canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+    .hud{position:fixed;left:14px;bottom:14px;font-size:12px;opacity:.7}
+    .topbar{position:fixed;top:10px;left:10px;display:flex;gap:8px}
+    .btn{background:var(--panel2);border:1px solid var(--border);color:var(--fg);padding:8px 12px;border-radius:8px;cursor:pointer}
     .btn:disabled{opacity:.5;cursor:not-allowed}
+    /* Settings panel */
+    #settings{position:fixed;right:12px;top:12px;width:300px;max-height:90vh;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px 12px 6px}
+    #settings h3{margin:6px 0 8px 0;font-size:16px}
+    #settings .row{display:flex;justify-content:space-between;align-items:center;margin:8px 0}
+    #settings label{font-size:14px}
+    #meterWrap{position:fixed;right:12px;bottom:12px;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:10px 12px;width:300px}
+    #meterBar{height:12px;background:#0d1218;border-radius:8px;overflow:hidden;border:1px solid var(--border)}
+    #meterFill{height:100%;width:0%;background:linear-gradient(90deg,#2dd4bf,#22c55e)}
+    .pepp{position:fixed;left:50%;transform:translateX(-50%);top:10px;background:rgba(0,0,0,.6);padding:8px 12px;border-radius:10px;border:1px solid var(--border);backdrop-filter:blur(6px);max-width:80vw;text-align:center}
+    .small{font-size:12px;opacity:.8}
+    details{border:1px dashed var(--border);border-radius:8px;padding:6px}
+    summary{cursor:pointer}
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.21.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js"></script>
 </head>
 <body>
-<button id="start" class="btn">Starta kamera</button>
-<div id="stage">
-  <div class="layer-wrap" id="wrap">
-    <video id="video" autoplay muted playsinline></video>
-    <canvas id="overlay"></canvas>
+  <div class="topbar">
+    <button id="start" class="btn">Starta kamera</button>
+    <button id="nextPepp" class="btn" title="Visa nästa pepp direkt">Nästa pepp</button>
   </div>
-</div>
-<div class="warn">Ge kameratillstånd i webbläsaren. Allt körs lokalt i din dator.</div>
+
+  <div id="stage">
+    <div class="layer-wrap" id="wrap">
+      <video id="video" autoplay muted playsinline></video>
+      <canvas id="overlay"></canvas>
+    </div>
+  </div>
+
+  <!-- Settings -->
+  <div id="settings">
+    <h3>Settings</h3>
+
+    <div class="row">
+      <label for="camSel">Kamera</label>
+      <select id="camSel" class="btn" style="width:170px"></select>
+    </div>
+
+    <div class="row">
+      <label>Halloween-tema</label>
+      <input type="checkbox" id="halloweenToggle">
+    </div>
+
+    <div class="row">
+      <label>Logga besökare</label>
+      <input type="checkbox" id="logToggle">
+    </div>
+
+    <div class="row">
+      <label for="conf">Konfidens (etikett)</label>
+      <input id="conf" type="range" min="0.2" max="0.9" step="0.05" value="0.40">
+    </div>
+
+    <div class="row">
+      <label for="inputSize">Detector size</label>
+      <input id="inputSize" type="range" min="224" max="512" step="32" value="320">
+    </div>
+
+    <details style="margin-top:8px">
+      <summary>Peppande one-liners</summary>
+      <div class="row" style="margin-top:8px">
+        <label>Aktivera</label><input type="checkbox" id="peppToggle">
+      </div>
+      <div class="row">
+        <label for="peppCat">Kategori</label>
+        <select id="peppCat" class="btn" style="width:170px">
+          <option value="all">Alla</option>
+          <option value="skola">Skola</option>
+          <option value="maende">Mående</option>
+          <option value="basta">Gör ditt bästa</option>
+          <option value="van">Vänskap</option>
+        </select>
+      </div>
+      <p class="small">Visas var ~30:e sekund när aktiverat (eller klicka “Nästa pepp”).</p>
+    </details>
+
+    <details style="margin-top:8px">
+      <summary>Besökslogg</summary>
+      <div class="row" style="margin-top:8px">
+        <button id="dlLog" class="btn">Ladda ner CSV</button>
+        <button id="clearLog" class="btn" style="background:#581c1c;border-color:#7f1d1d">Nollställ</button>
+      </div>
+      <p id="logInfo" class="small"></p>
+    </details>
+  </div>
+
+  <!-- Mood meter -->
+  <div id="meterWrap">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <strong>Mood-mätare</strong>
+      <span id="meterVal" class="small">0</span>
+    </div>
+    <div id="meterBar"><div id="meterFill"></div></div>
+    <div class="small" style="margin-top:6px">Ökar när någon är <em>Glad</em> ≥ 5 s i sträck. Reset 19:30.</div>
+  </div>
+
+  <div class="pepp" id="peppBox" style="display:none"></div>
+  <div class="hud">Allt körs lokalt i din dator.</div>
 
 <script>
-const EMO_SV = {angry:"Arg", disgust:"Äcklad", fear:"Rädd", happy:"Glad", sad:"Ledsen", surprise:"Förvånad", neutral:"Neutral"};
-const EMO_COLOR = {happy:"#28c728", angry:"#2a2ae0", sad:"#c07800", surprise:"#c0c000", fear:"#00b4b4", disgust:"#00a078", neutral:"#b0b0b0"};
-const EMO_CONF_MIN = 0.40;
+/* ---------- Konstanter & state ---------- */
+const EMO_SV = { angry:"Arg", disgusted:"Äcklad", fearful:"Rädd", happy:"Glad", neutral:"Neutral", sad:"Ledsen", surprised:"Förvånad" };
+const EMO_EMOJI = { angry:"😠", disgusted:"🤢", fearful:"😨", happy:"😄", neutral:"😐", sad:"😢", surprised:"😮" };
+const EMO_COLOR = { happy:"#28c728", angry:"#2a2ae0", sad:"#c07800", surprised:"#c0c000", fearful:"#00b4b4", disgusted:"#00a078", neutral:"#b0b0b0" };
 
-async function loadModels() {
-  const base = './models/';               // relativ sökväg för GitHub Pages
-  await faceapi.nets.tinyFaceDetector.load(base);
-  await faceapi.nets.faceExpressionNet.load(base);
-  await faceapi.nets.ageGenderNet.load(base); // vi använder bara age
+let EMO_CONF_MIN = 0.40;
+let DETECTOR_SIZE = 320;
+
+let halloweenMode = false;
+let logEnabled = false;
+
+let video, overlay, ctx;
+let currentStream = null;
+
+const tracks = [];            // {id, bbox:[x,y,w,h], last, happyStreak, counted, seenFrames}
+let nextId = 1;
+
+let lastFrameTime = performance.now();
+
+let meterTarget = 0;          // heltal som ska uppnås
+let meterShown = 0;           // visas med easing
+const METER_EASE = 0.05;
+
+const RESET_H = 19, RESET_M = 30;
+let lastResetDay = null;
+
+const visitorsByDay = JSON.parse(localStorage.getItem('moodcam.visitors') || '{}'); // {"2025-10-11": 12}
+updateLogInfo();
+
+/* ---------- Hjälp ---------- */
+function todayKey() {
+  const d = new Date();
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), da = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${da}`;
 }
 
-function drawLabel(ctx, x, y, text) {
+function scheduleResetIfNeeded() {
+  const now = new Date();
+  const key = todayKey();
+  if (lastResetDay !== key) {
+    const reset = new Date();
+    reset.setHours(RESET_H, RESET_M, 0, 0);
+    if (now >= reset) {
+      // redan passerat dagens reset -> nollställ och märk dagen
+      meterTarget = 0; meterShown = 0;
+      lastResetDay = key;
+    } else {
+      lastResetDay = key; // markerar att vi hanterar dagens fönster
+    }
+  }
+  // Om klockan råkar ticka över 19:30 under körning:
+  const resetNow = new Date(); resetNow.setHours(RESET_H, RESET_M, 0, 0);
+  if (Math.abs((new Date()) - resetNow) < 1000) { // inom 1 s-fönster
+    meterTarget = 0; meterShown = 0;
+  }
+}
+
+function iou(a, b) {
+  const [ax, ay, aw, ah] = a, [bx, by, bw, bh] = b;
+  const x1 = Math.max(ax, bx), y1 = Math.max(ay, by);
+  const x2 = Math.min(ax+aw, bx+bw), y2 = Math.min(ay+ah, by+bh);
+  const inter = Math.max(0, x2-x1) * Math.max(0, y2-y1);
+  const union = aw*ah + bw*bh - inter;
+  return union > 0 ? inter/union : 0;
+}
+
+function drawLabel(x, y, text) {
   ctx.font = '16px system-ui';
   const pad = 6, h = 18, w = ctx.measureText(text).width;
   ctx.fillStyle = 'rgba(0,0,0,0.85)';
@@ -58,78 +190,268 @@ function drawLabel(ctx, x, y, text) {
   ctx.fillText(text, x, y);
 }
 
-// Håll canvas i exakt samma pixelstorlek som videons buffer
-function syncOverlaySize(video, canvas) {
-  // Intern bitmap-storlek (viktig för ritkoordinater)
-  canvas.width  = video.videoWidth;
-  canvas.height = video.videoHeight;
-  // Visuell storlek (följer videon i layouten)
-  canvas.style.width  = video.clientWidth + 'px';
-  canvas.style.height = video.clientHeight + 'px';
+function drawWitchHat(x, y, w, h) {
+  // enkel hat-triangel + brätte
+  ctx.fillStyle = 'rgba(30,30,30,0.9)';
+  ctx.beginPath();
+  ctx.moveTo(x + w*0.15, y + h*0.15);
+  ctx.lineTo(x + w*0.5,  y - h*0.25);
+  ctx.lineTo(x + w*0.85, y + h*0.15);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillRect(x + w*0.05, y + h*0.15, w*0.9, h*0.05);
 }
 
-async function start() {
-  const btn = document.getElementById('start');
-  btn.disabled = true;
-  try {
-    await loadModels();
+function drawZombieTint(x, y, w, h) {
+  ctx.fillStyle = 'rgba(0,180,0,0.18)';
+  ctx.fillRect(x, y, w, h);
+}
 
-    const video = document.getElementById('video');
-    const overlay = document.getElementById('overlay');
+function randEffect() {
+  return Math.random() < 0.5 ? 'hat' : 'zombie';
+}
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 960 }, height: { ideal: 540 } }
-    });
-    video.srcObject = stream;
+function syncOverlaySize() {
+  overlay.width  = video.videoWidth;
+  overlay.height = video.videoHeight;
+  overlay.style.width  = video.clientWidth + 'px';
+  overlay.style.height = video.clientHeight + 'px';
+}
 
-    await new Promise(r => video.onloadedmetadata = r);
-    syncOverlaySize(video, overlay);
+/* ---------- Pepp ---------- */
+const PEPP = {
+  skola: [
+    "Du gör klassrummet bättre bara genom att vara här.",
+    "Kunskap + nyfikenhet = superkraft!",
+    "Ställ en fråga – någon annan undrar samma sak."
+  ],
+  maende: [
+    "Du duger precis som du är. 💙",
+    "Ta tre djupa andetag – du fixar det.",
+    "Små steg räknas också."
+  ],
+  basta: [
+    "Gör ditt bästa idag – det räcker långt.",
+    "Fokusera på nästa lilla förbättring.",
+    "Misstag = data för att bli vassare."
+  ],
+  van: [
+    "Har du kramat någon idag? 🤗",
+    "Säg till en vän hur mycket hen betyder för dig.",
+    "Le mot någon – du ändrar någons dag."
+  ]
+};
+let peppEnabled = false;
+let peppCat = 'all';
+let peppTimer = 0;
+const PEPP_INTERVAL = 30_000;
 
-    // Uppdatera om fönstret ändrar storlek
-    new ResizeObserver(() => syncOverlaySize(video, overlay)).observe(document.getElementById('wrap'));
+function randomPepp() {
+  const cats = peppCat === 'all' ? Object.keys(PEPP) : [peppCat];
+  const cat = cats[Math.floor(Math.random()*cats.length)];
+  const arr = PEPP[cat];
+  return arr[Math.floor(Math.random()*arr.length)];
+}
 
-    const ctx = overlay.getContext('2d');
-    const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.6 });
+function showPepp(force=false) {
+  if (!peppEnabled && !force) return;
+  const box = document.getElementById('peppBox');
+  box.textContent = randomPepp();
+  box.style.display = 'block';
+  setTimeout(()=> box.style.display='none', 6000);
+}
 
-    async function tick() {
-      const detections = await faceapi
-        .detectAllFaces(video, options)
-        .withFaceExpressions()
-        .withAgeAndGender();
-
-      ctx.clearRect(0,0,overlay.width,overlay.height);
-
-      for (const det of detections) {
-        const { x, y, width, height } = det.detection.box;
-
-        // toppemotion + konfidens
-        const emotions = det.expressions || {};
-        let emo = null, conf = 0;
-        for (const [k,v] of Object.entries(emotions)) if (v > conf) { emo = k; conf = v; }
-
-        const age = det.age ? Math.round(det.age) : null;
-
-        const color = EMO_COLOR[emo] || '#24ff78';
-        ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.strokeRect(x, y, width, height);
-
-        if (emo && conf >= EMO_CONF_MIN) {
-          const label = `${EMO_SV[emo] || emo} · ${Math.round(conf*100)}%` + (age ? ` · ${age} år` : '');
-          drawLabel(ctx, x, y, label);
-        } else if (age) {
-          drawLabel(ctx, x, y, `${age} år`);
-        }
-      }
-      requestAnimationFrame(tick);
-    }
-    tick();
-  } catch (err) {
-    alert('Kunde inte starta: ' + err);
-    console.error(err);
-    document.getElementById('start').disabled = false;
+/* ---------- Kamera ---------- */
+async function listCams(defaultIndex=1) {
+  const sel = document.getElementById('camSel');
+  sel.innerHTML = '';
+  const devices = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+  devices.forEach((d,i) => {
+    const opt = document.createElement('option');
+    opt.value = d.deviceId;
+    opt.textContent = d.label || `Kamera ${i+1}`;
+    sel.appendChild(opt);
+  });
+  if (devices.length) {
+    sel.selectedIndex = Math.min(defaultIndex, devices.length-1);
   }
 }
 
-document.getElementById('start').addEventListener('click', start);
+async function startCamera(deviceId) {
+  if (currentStream) currentStream.getTracks().forEach(t => t.stop());
+  const constraints = deviceId ? { video: { deviceId: { exact: deviceId }, width: { ideal: 960 }, height: { ideal: 540 } } }
+                               : { video: { width: { ideal: 960 }, height: { ideal: 540 } } };
+  currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+  video.srcObject = currentStream;
+  await new Promise(r => video.onloadedmetadata = r);
+  syncOverlaySize();
+}
+
+/* ---------- Modeller ---------- */
+async function loadModels() {
+  const base = './models/';
+  await faceapi.nets.tinyFaceDetector.load(base);
+  await faceapi.nets.faceExpressionNet.load(base);
+  await faceapi.nets.ageGenderNet.load(base); // age only
+}
+
+/* ---------- Huvudloop ---------- */
+async function tick() {
+  scheduleResetIfNeeded();
+
+  // fps delta
+  const now = performance.now();
+  const dt = Math.min(0.1, (now - lastFrameTime) / 1000); // s
+  lastFrameTime = now;
+
+  const options = new faceapi.TinyFaceDetectorOptions({ inputSize: DETECTOR_SIZE, scoreThreshold: 0.6 });
+
+  const dets = await faceapi.detectAllFaces(video, options).withFaceExpressions().withAgeAndGender();
+
+  ctx.clearRect(0,0,overlay.width,overlay.height);
+
+  // matcha mot tracks
+  const used = new Set();
+  for (const det of dets) {
+    const b = det.detection.box;
+    const bbox = [b.x, b.y, b.width, b.height];
+
+    // hitta bästa match via IoU
+    let best = null, bestIoU = 0;
+    tracks.forEach(t => {
+      const i = iou(t.bbox, bbox);
+      if (i > bestIoU) { bestIoU = i; best = t; }
+    });
+
+    if (best && bestIoU > 0.3) {
+      best.bbox = bbox;
+      best.last = now;
+    } else {
+      const t = { id: nextId++, bbox, last: now, happyStreak: 0, counted:false, seenFrames:0, effect: randEffect() };
+      tracks.push(t);
+      // räkna besökare när de stannar lite
+    }
+
+    // emotion
+    const exp = det.expressions || {};
+    let emo = null, conf = 0;
+    for (const [k,v] of Object.entries(exp)) if (v > conf) { emo = k; conf = v; }
+    const age = det.age ? Math.round(det.age) : null;
+
+    // uppdatera happy-streak
+    const tr = best && bestIoU > 0.3 ? best : tracks[tracks.length-1];
+    tr.seenFrames++;
+    if (!tr.counted && logEnabled && tr.seenFrames === 30) { // ~1s @ ~30fps
+      const key = todayKey();
+      visitorsByDay[key] = (visitorsByDay[key]||0) + 1;
+      localStorage.setItem('moodcam.visitors', JSON.stringify(visitorsByDay));
+      updateLogInfo();
+      tr.counted = true;
+    }
+
+    if (emo === 'happy' && conf >= EMO_CONF_MIN) {
+      tr.happyStreak += dt;
+      if (tr.happyStreak >= 5) {
+        meterTarget += 1;            // höj målet
+        tr.happyStreak = 0;          // starta om streaken
+      }
+    } else {
+      tr.happyStreak = 0;
+    }
+
+    // rita ruta + etikett
+    const [x,y,w,h] = bbox;
+    const color = EMO_COLOR[emo] || '#24ff78';
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
+
+    if (emo && conf >= EMO_CONF_MIN) {
+      const label = `${EMO_SV[emo]||emo} · ${Math.round(conf*100)}%` + (age ? ` · ${age} år` : '');
+      drawLabel(x, y, label);
+    } else if (age) {
+      drawLabel(x, y, `${age} år`);
+    }
+
+    // emoji i övre högra hörnet
+    const emoji = EMO_EMOJI[emo] || "🙂";
+    ctx.font = '22px serif';
+    ctx.fillText(emoji, x + w - 22, y + 22);
+
+    // halloween-effekter
+    if (halloweenMode) {
+      const eff = tr.effect;
+      if (eff === 'hat') drawWitchHat(x, y, w, h);
+      else if (eff === 'zombie') drawZombieTint(x, y, w, h);
+    }
+  }
+
+  // ta bort utdöda tracks
+  for (let i = tracks.length-1; i >= 0; i--) {
+    if (now - tracks[i].last > 1500) tracks.splice(i,1);
+  }
+
+  // meter easing
+  meterShown = meterShown + (meterTarget - meterShown) * METER_EASE;
+  document.getElementById('meterFill').style.width = Math.max(0, Math.min(100, meterShown)) + '%';
+  document.getElementById('meterVal').textContent = Math.round(meterShown);
+
+  // pepp
+  peppTimer += (dt*1000);
+  if (peppTimer >= PEPP_INTERVAL) { peppTimer = 0; showPepp(); }
+
+  requestAnimationFrame(tick);
+}
+
+/* ---------- UI wiring ---------- */
+function updateLogInfo() {
+  const list = Object.entries(visitorsByDay).sort(([a],[b]) => a.localeCompare(b));
+  const txt = list.length ? list.map(([d,n]) => `${d}: ${n}`).join(' · ') : 'Ingen logg än.';
+  const el = document.getElementById('logInfo'); if (el) el.textContent = txt;
+}
+
+function downloadCSV() {
+  const rows = [['date','visitors'], ...Object.entries(visitorsByDay)];
+  const csv = rows.map(r => r.join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'moodcam_visitors.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ---------- Start ---------- */
+(async function init(){
+  video = document.getElementById('video');
+  overlay = document.getElementById('overlay');
+  ctx = overlay.getContext('2d');
+
+  // Settings default
+  document.getElementById('halloweenToggle').addEventListener('change', e => halloweenMode = e.target.checked);
+  document.getElementById('logToggle').addEventListener('change', e => logEnabled = e.target.checked);
+  document.getElementById('conf').addEventListener('input', e => EMO_CONF_MIN = parseFloat(e.target.value));
+  document.getElementById('inputSize').addEventListener('input', e => DETECTOR_SIZE = parseInt(e.target.value,10));
+
+  document.getElementById('dlLog').addEventListener('click', downloadCSV);
+  document.getElementById('clearLog').addEventListener('click', () => { for (const k in visitorsByDay) delete visitorsByDay[k]; localStorage.setItem('moodcam.visitors','{}'); updateLogInfo(); });
+
+  document.getElementById('nextPepp').addEventListener('click', ()=> showPepp(true));
+  document.getElementById('peppToggle').addEventListener('change', e => { peppEnabled = e.target.checked; peppTimer = 0; if (peppEnabled) showPepp(true); });
+  document.getElementById('peppCat').addEventListener('change', e => peppCat = e.target.value);
+
+  await loadModels();
+  await listCams(1); // default = kameraindex 1 (dvs "andra" kameran)
+  document.getElementById('camSel').addEventListener('change', async e => {
+    await startCamera(e.target.value);
+  });
+
+  document.getElementById('start').addEventListener('click', async () => {
+    const sel = document.getElementById('camSel');
+    await startCamera(sel.value);
+    new ResizeObserver(syncOverlaySize).observe(document.getElementById('wrap'));
+    requestAnimationFrame(tick);
+    document.getElementById('start').disabled = true;
+  });
+})();
 </script>
 </body>
 </html>
