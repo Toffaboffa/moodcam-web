@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>MoodCam (web)</title>
+  <style>
+    html,body{margin:0;height:100%;background:#0b0f14;color:#e7effa;font-family:system-ui,Segoe UI,Roboto,sans-serif}
+    #wrap{display:grid;place-items:center;height:100%}
+    video,canvas{max-width:96vw;max-height:96vh;border-radius:12px;box-shadow:0 12px 36px rgba(0,0,0,.5)}
+    .warn{position:fixed;left:10px;bottom:10px;font-size:12px;opacity:.65}
+  </style>
+  <!-- TensorFlow.js + face-api (vladmandic) från CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.21.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js"></script>
+</head>
+<body>
+<div id="wrap">
+  <video id="video" autoplay muted playsinline></video>
+  <canvas id="overlay"></canvas>
+</div>
+<div class="warn">Ge kameratillstånd i webbläsaren. Allt körs lokalt i din dator.</div>
+
+<script>
+const EMO_SV = {angry:"Arg", disgust:"Äcklad", fear:"Rädd", happy:"Glad", sad:"Ledsen", surprise:"Förvånad", neutral:"Neutral"};
+const EMO_COLOR = {happy:"#28c728", angry:"#2a2ae0", sad:"#c07800", surprise:"#c0c000", fear:"#00b4b4", disgust:"#00a078", neutral:"#b0b0b0"};
+const EMO_CONF_MIN = 0.40;
+
+async function loadModels() {
+  // Modellerna laddas från din repo-mapp /models (måste finnas exakt som filer nedan i steg 3C)
+  const base = '/models/';
+  await faceapi.nets.tinyFaceDetector.load(base);
+  await faceapi.nets.faceExpressionNet.load(base);
+  await faceapi.nets.ageGenderNet.load(base); // vi använder bara 'age'
+}
+
+function drawLabel(ctx, x, y, text) {
+  ctx.font = '16px system-ui';
+  const pad = 6;
+  const w = ctx.measureText(text).width, h = 18;
+  ctx.fillStyle = 'rgba(0,0,0,0.85)';
+  ctx.fillRect(x - pad, y - h - pad, w + pad*2, h + pad*2);
+  ctx.fillStyle = '#fff';
+  ctx.fillText(text, x, y);
+}
+
+async function main() {
+  await loadModels();
+
+  const video = document.getElementById('video');
+  const overlay = document.getElementById('overlay');
+  const stream = await navigator.mediaDevices.getUserMedia({ video: { width: {ideal: 1280}, height: {ideal: 720} }});
+  video.srcObject = stream;
+
+  await new Promise(r => video.onloadedmetadata = r);
+  overlay.width = video.videoWidth;
+  overlay.height = video.videoHeight;
+  const ctx = overlay.getContext('2d');
+
+  const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.6 });
+
+  async function tick() {
+    const detections = await faceapi
+      .detectAllFaces(video, options)
+      .withFaceExpressions()
+      .withAgeAndGender(); // vi ignorerar gender i UI:t
+
+    ctx.clearRect(0,0,overlay.width,overlay.height);
+
+    detections.forEach(det => {
+      const { x, y, width, height } = det.detection.box;
+
+      // välj högst sannolik emotion
+      const emotions = det.expressions || {};
+      let emo = null, conf = 0;
+      for (const [k,v] of Object.entries(emotions)) if (v > conf) { emo = k; conf = v; }
+
+      const age = det.age ? Math.round(det.age) : null;
+
+      // ruta
+      const color = EMO_COLOR[emo] || '#24ff78';
+      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.strokeRect(x, y, width, height);
+
+      // etikett: bara om emotion är säker, annars bara ålder
+      if (emo && conf >= EMO_CONF_MIN) {
+        const label = `${EMO_SV[emo] || emo} · ${Math.round(conf*100)}%` + (age ? ` · ${age} år` : '');
+        drawLabel(ctx, x, y, label);
+      } else if (age) {
+        drawLabel(ctx, x, y, `${age} år`);
+      }
+    });
+
+    requestAnimationFrame(tick);
+  }
+  tick();
+}
+main();
+</script>
+</body>
+</html>
