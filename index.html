@@ -146,7 +146,7 @@ const UI = {
   labelPad: 3,         // pixelmarginal runt texten (svarta rutan)
   pepFontSize: 13,     // px för pepp-raden
   pepPad: 3,           // pixelmarginal runt pepp-rutan
-  faceBoxWidth: 2      // linjetjocklek på gröna rutan
+  faceBoxWidth: 2      // linjetjocklek på rutan
 };
 
 let EMO_CONF_MIN = 0.40;
@@ -182,7 +182,16 @@ updateLogInfo();
 /* ---------- Hjälp ---------- */
 function todayKey(){ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 function scheduleResetIfNeeded(){ const now=new Date(); const reset=new Date(); reset.setHours(RESET_H, RESET_M, 0, 0); if (Math.abs(now-reset)<1000){ meterTarget=0; meterShown=0; } }
-function iou(a,b){ const [ax,ay,aw,ah]=a,[bx,by,bw,bh]=b; const x1=Math.max(ax,bx),y1=Math.max(ay,bx?by:by),x2=Math.min(ax+aw,bx+bw),y2=Math.min(ay+ah,bx?by+bh:by+bh); const inter=Math.max(0,x2-x1)*Math.max(0,y2-y1), union=aw*ah+bw*bh-inter; return union>0? inter/union:0; }
+function iou(a,b){
+  const [ax,ay,aw,ah] = a, [bx,by,bw,bh] = b;
+  const x1 = Math.max(ax, bx);
+  const y1 = Math.max(ay, by);
+  const x2 = Math.min(ax + aw, bx + bw);
+  const y2 = Math.min(ay + ah, by + bh);
+  const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  const union = aw * ah + bw * bh - inter;
+  return union > 0 ? inter / union : 0;
+}
 
 function drawLabel(x, y, text){
   const font = `${UI.labelFontSize}px system-ui`;
@@ -191,7 +200,7 @@ function drawLabel(x, y, text){
   ctx.textBaseline = 'alphabetic';
 
   const pad = UI.labelPad;
-  const h   = UI.labelFontSize * 1.2;              // uppskattad texthöjd
+  const h   = UI.labelFontSize * 1.2;
   const w   = ctx.measureText(text).width;
 
   ctx.fillStyle = 'rgba(0,0,0,0.85)';
@@ -316,7 +325,9 @@ async function tick(){
     // ritning
     const [x,y,w,h]=tr.bbox;
     const color=EMO_COLOR[emo]||'#24ff78';
-    ctx.strokeStyle=color; ctx.lineWidth=2; ctx.strokeRect(x,y,w,h);
+    ctx.strokeStyle=color;
+    ctx.lineWidth = UI.faceBoxWidth;   // styrs via UI-konstant
+    ctx.strokeRect(x,y,w,h);
 
     if (emo && conf>=EMO_CONF_MIN){ const label=`${EMO_SV[emo]||emo} · ${Math.round(conf*100)}%` + (age?` · ${age} år`:''); drawLabel(x,y,label); }
     else if (age){ drawLabel(x,y,`${age} år`); }
@@ -335,10 +346,13 @@ async function tick(){
     // Teman (PNG)
     drawEffects(tr, x,y,w,h);
 
-    // Pepp nederst i varje ruta
-    if (peppEnabled){
-      if (!tr.peppText || (now - tr.lastPepp) > PEPP_INTERVAL){ tr.peppText = randomPepp(); tr.lastPepp = now; }
-      drawCenteredBottom(x,y,w,h,tr.peppText);
+    // Pepp: lås per person (byter inte medan samma person är kvar)
+    if (peppEnabled) {
+      if (!tr.peppText) {
+        tr.peppText = randomPepp();
+        tr.lastPepp = now;
+      }
+      drawCenteredBottom(x, y, w, h, tr.peppText);
     }
   }
 
