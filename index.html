@@ -139,6 +139,15 @@
 const EMO_SV = { angry:"Arg", disgusted:"Äcklad", fearful:"Rädd", happy:"Glad", neutral:"Neutral", sad:"Ledsen", surprised:"Förvånad" };
 const EMO_EMOJI = { angry:"😠", disgusted:"🤢", fearful:"😨", happy:"😄", neutral:"😐", sad:"😢", surprised:"😮" };
 const EMO_COLOR = { happy:"#28c728", angry:"#2a2ae0", sad:"#c07800", surprised:"#c0c000", fearful:"#00b4b4", disgusted:"#00a078", neutral:"#b0b0b0" };
+ 
+// ---- UI-justeringar ----
+const UI = {
+  labelFontSize: 11,   // px för "Glad · 95% · 12 år"
+  labelPad: 3,         // pixelmarginal runt texten (svarta rutan)
+  pepFontSize: 14,     // px för pepp-raden
+  pepPad: 3,           // pixelmarginal runt pepp-rutan
+  faceBoxWidth: 2      // linjetjocklek på gröna rutan
+};
 
 let EMO_CONF_MIN = 0.40;
 let DETECTOR_SIZE = 320;
@@ -175,28 +184,40 @@ function todayKey(){ const d=new Date(); return `${d.getFullYear()}-${String(d.g
 function scheduleResetIfNeeded(){ const now=new Date(); const reset=new Date(); reset.setHours(RESET_H, RESET_M, 0, 0); if (Math.abs(now-reset)<1000){ meterTarget=0; meterShown=0; } }
 function iou(a,b){ const [ax,ay,aw,ah]=a,[bx,by,bw,bh]=b; const x1=Math.max(ax,bx),y1=Math.max(ay,bx?by:by),x2=Math.min(ax+aw,bx+bw),y2=Math.min(ay+ah,bx?by+bh:by+bh); const inter=Math.max(0,x2-x1)*Math.max(0,y2-y1), union=aw*ah+bw*bh-inter; return union>0? inter/union:0; }
 
-function drawLabel(x,y,text){
-  ctx.font='16px system-ui';
-  ctx.textAlign='left';
-  ctx.textBaseline='alphabetic';
-  const pad=6, h=18, w=ctx.measureText(text).width;
-  ctx.fillStyle='rgba(0,0,0,0.85)';
-  ctx.fillRect(x-pad,y-h-pad,w+pad*2,h+pad*2);
-  ctx.fillStyle='#fff';
-  ctx.fillText(text,x,y);
+function drawLabel(x, y, text){
+  const font = `${UI.labelFontSize}px system-ui`;
+  ctx.font = font;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+
+  const pad = UI.labelPad;
+  const h   = UI.labelFontSize * 1.2;              // uppskattad texthöjd
+  const w   = ctx.measureText(text).width;
+
+  ctx.fillStyle = 'rgba(0,0,0,0.85)';
+  ctx.fillRect(x - pad, y - h - pad, w + pad*2, h + pad*2);
+
+  ctx.fillStyle = '#fff';
+  ctx.fillText(text, x, y);
 }
 
-function drawCenteredBottom(x,y,w,h,text){
-  ctx.font='16px system-ui';
-  ctx.textAlign='left';
-  ctx.textBaseline='alphabetic';
-  const pad=6, htxt=18, tw=ctx.measureText(text).width;
-  const cx=x+w/2 - tw/2;
-  const cy=y+h - 8;
-  ctx.fillStyle='rgba(0,0,0,0.7)';
-  ctx.fillRect(cx-pad,cy-htxt-pad,tw+pad*2,htxt+pad*2);
-  ctx.fillStyle='#fff';
-  ctx.fillText(text,cx,cy);
+function drawCenteredBottom(x, y, w, h, text){
+  const font = `${UI.pepFontSize}px system-ui`;
+  ctx.font = font;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+
+  const pad = UI.pepPad;
+  const htxt = UI.pepFontSize * 1.2;
+  const tw = ctx.measureText(text).width;
+  const cx = x + w/2 - tw/2;
+  const cy = y + h - 8;
+
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.fillRect(cx - pad, cy - htxt - pad, tw + pad*2, htxt + pad*2);
+
+  ctx.fillStyle = '#fff';
+  ctx.fillText(text, cx, cy);
 }
 
 function syncOverlaySize(){ overlay.width=video.videoWidth; overlay.height=video.videoHeight; overlay.style.width=video.clientWidth+'px'; overlay.style.height=video.clientHeight+'px'; }
