@@ -9,12 +9,16 @@
     #wrap{display:grid;place-items:center;height:100%}
     video,canvas{max-width:96vw;max-height:96vh;border-radius:12px;box-shadow:0 12px 36px rgba(0,0,0,.5)}
     .warn{position:fixed;left:10px;bottom:10px;font-size:12px;opacity:.65}
+    .btn{position:fixed;top:10px;left:10px;background:#111827;border:1px solid #1f2937;color:#e7effa;
+         padding:8px 12px;border-radius:8px;cursor:pointer}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
   </style>
   <!-- TensorFlow.js + face-api (vladmandic) från CDN -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.21.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js"></script>
 </head>
 <body>
+<button id="start" class="btn">Starta kamera</button>
 <div id="wrap">
   <video id="video" autoplay muted playsinline></video>
   <canvas id="overlay"></canvas>
@@ -27,7 +31,7 @@ const EMO_COLOR = {happy:"#28c728", angry:"#2a2ae0", sad:"#c07800", surprise:"#c
 const EMO_CONF_MIN = 0.40;
 
 async function loadModels() {
-  // Modellerna laddas från din repo-mapp /models (måste finnas exakt som filer nedan i steg 3C)
+  // VIKTIGT: relativ sökväg för GitHub Pages projekt-site
   const base = './models/';
   await faceapi.nets.tinyFaceDetector.load(base);
   await faceapi.nets.faceExpressionNet.load(base);
@@ -36,65 +40,73 @@ async function loadModels() {
 
 function drawLabel(ctx, x, y, text) {
   ctx.font = '16px system-ui';
-  const pad = 6;
-  const w = ctx.measureText(text).width, h = 18;
+  const pad = 6, h = 18, w = ctx.measureText(text).width;
   ctx.fillStyle = 'rgba(0,0,0,0.85)';
   ctx.fillRect(x - pad, y - h - pad, w + pad*2, h + pad*2);
   ctx.fillStyle = '#fff';
   ctx.fillText(text, x, y);
 }
 
-async function main() {
-  await loadModels();
+async function start() {
+  const btn = document.getElementById('start');
+  btn.disabled = true;
+  try {
+    await loadModels();
 
-  const video = document.getElementById('video');
-  const overlay = document.getElementById('overlay');
-  const stream = await navigator.mediaDevices.getUserMedia({ video: { width: {ideal: 1280}, height: {ideal: 720} }});
-  video.srcObject = stream;
+    const video = document.getElementById('video');
+    const overlay = document.getElementById('overlay');
 
-  await new Promise(r => video.onloadedmetadata = r);
-  overlay.width = video.videoWidth;
-  overlay.height = video.videoHeight;
-  const ctx = overlay.getContext('2d');
-
-  const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.6 });
-
-  async function tick() {
-    const detections = await faceapi
-      .detectAllFaces(video, options)
-      .withFaceExpressions()
-      .withAgeAndGender(); // vi ignorerar gender i UI:t
-
-    ctx.clearRect(0,0,overlay.width,overlay.height);
-
-    detections.forEach(det => {
-      const { x, y, width, height } = det.detection.box;
-
-      // välj högst sannolik emotion
-      const emotions = det.expressions || {};
-      let emo = null, conf = 0;
-      for (const [k,v] of Object.entries(emotions)) if (v > conf) { emo = k; conf = v; }
-
-      const age = det.age ? Math.round(det.age) : null;
-
-      // ruta
-      const color = EMO_COLOR[emo] || '#24ff78';
-      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.strokeRect(x, y, width, height);
-
-      // etikett: bara om emotion är säker, annars bara ålder
-      if (emo && conf >= EMO_CONF_MIN) {
-        const label = `${EMO_SV[emo] || emo} · ${Math.round(conf*100)}%` + (age ? ` · ${age} år` : '');
-        drawLabel(ctx, x, y, label);
-      } else if (age) {
-        drawLabel(ctx, x, y, `${age} år`);
-      }
+    // Lägre upplösning => lägre CPU, bättre FPS
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 960 }, height: { ideal: 540 } }
     });
+    video.srcObject = stream;
 
-    requestAnimationFrame(tick);
+    await new Promise(r => video.onloadedmetadata = r);
+    overlay.width = video.videoWidth;
+    overlay.height = video.videoHeight;
+    const ctx = overlay.getContext('2d');
+
+    // Lägre inputSize => snabbare detektor (320 el. 256 vid behov)
+    const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.6 });
+
+    async function tick() {
+      const detections = await faceapi
+        .detectAllFaces(video, options)
+        .withFaceExpressions()
+        .withAgeAndGender(); // ålder används, kön ignoreras
+
+      ctx.clearRect(0,0,overlay.width,overlay.height);
+
+      for (const det of detections) {
+        const { x, y, width, height } = det.detection.box;
+        const emotions = det.expressions || {};
+        let emo = null, conf = 0;
+        for (const [k,v] of Object.entries(emotions)) if (v > conf) { emo = k; conf = v; }
+
+        const age = det.age ? Math.round(det.age) : null;
+
+        const color = EMO_COLOR[emo] || '#24ff78';
+        ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.strokeRect(x, y, width, height);
+
+        if (emo && conf >= EMO_CONF_MIN) {
+          const label = `${EMO_SV[emo] || emo} · ${Math.round(conf*100)}%` + (age ? ` · ${age} år` : '');
+          drawLabel(ctx, x, y, label);
+        } else if (age) {
+          drawLabel(ctx, x, y, `${age} år`);
+        }
+      }
+      requestAnimationFrame(tick);
+    }
+    tick();
+  } catch (err) {
+    alert('Kunde inte starta: ' + err);
+    console.error(err);
+    document.getElementById('start').disabled = false;
   }
-  tick();
 }
-main();
+
+document.getElementById('start').addEventListener('click', start);
 </script>
 </body>
 </html>
