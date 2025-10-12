@@ -139,7 +139,7 @@
 const EMO_SV = { angry:"Arg", disgusted:"Äcklad", fearful:"Rädd", happy:"Glad", neutral:"Neutral", sad:"Ledsen", surprised:"Förvånad" };
 const EMO_EMOJI = { angry:"😠", disgusted:"🤢", fearful:"😨", happy:"😄", neutral:"😐", sad:"😢", surprised:"😮" };
 const EMO_COLOR = { happy:"#28c728", angry:"#2a2ae0", sad:"#c07800", surprised:"#c0c000", fearful:"#00b4b4", disgusted:"#00a078", neutral:"#b0b0b0" };
- 
+
 // ---- UI-justeringar ----
 const UI = {
   labelFontSize: 12,   // px för "Glad · 95% · 12 år"
@@ -165,7 +165,7 @@ let LANDMARKS_AVAILABLE = false;
 let video, overlay, ctx;
 let currentStream = null;
 
-const tracks = [];            // {id,bbox:[x,y,w,h],last,happyStreak,counted,seenFrames,peppText,lastPepp,effectSet:{}}
+const tracks = [];            // {id,bbox:[x,y,w,h],last,created,happyStreak,counted,seenFrames,peppText,lastPepp,effectSet,ageHist}
 let nextId = 1;
 
 let lastFrameTime = performance.now();
@@ -178,6 +178,9 @@ const RESET_H = 19, RESET_M = 30;
 
 const visitorsByDay = JSON.parse(localStorage.getItem('moodcam.visitors') || '{}');
 updateLogInfo();
+
+/* --- NYTT: rullande fönster för ålder --- */
+const AGE_SMOOTH_WINDOW_MS = 10_000; // 10 s glidande medelvärde
 
 /* ---------- Hjälp ---------- */
 function todayKey(){ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
@@ -230,6 +233,28 @@ function drawCenteredBottom(x, y, w, h, text){
 }
 
 function syncOverlaySize(){ overlay.width=video.videoWidth; overlay.height=video.videoHeight; overlay.style.width=video.clientWidth+'px'; overlay.style.height=video.clientHeight+'px'; }
+
+/* --- NYTT: glidande medelvärde för ålder per track --- */
+function getSmoothedAge(track, now, latestAge) {
+  if (latestAge != null && !Number.isNaN(latestAge)) {
+    track.ageHist.push({ t: now, a: latestAge });
+  }
+  // rensa äldre än fönstret
+  const cutoff = now - AGE_SMOOTH_WINDOW_MS;
+  while (track.ageHist.length && track.ageHist[0].t < cutoff) {
+    track.ageHist.shift();
+  }
+
+  // <10 s i bild: visa råvärdet
+  if (now - track.created < AGE_SMOOTH_WINDOW_MS) {
+    return latestAge != null ? Math.round(latestAge) : null;
+  }
+
+  // >=10 s: visa medel i fönstret
+  if (!track.ageHist.length) return latestAge != null ? Math.round(latestAge) : null;
+  const avg = track.ageHist.reduce((s, p) => s + p.a, 0) / track.ageHist.length;
+  return Math.round(avg);
+}
 
 /* ---------- Pepp ---------- */
 const PEPP = {
@@ -301,12 +326,30 @@ async function tick(){
 
     // matcha track
     let best=null, bestIoU=0; tracks.forEach(t=>{ const i=iou(t.bbox,bbox); if(i>bestIoU){bestIoU=i; best=t;} });
-    if(best && bestIoU>0.3){ best.bbox=bbox; best.last=now; } else { const t={id:nextId++,bbox,last:now,happyStreak:0,counted:false,seenFrames:0,peppText:null,lastPepp:0,effectSet:null}; tracks.push(t); assignEffects(t); }
+    if(best && bestIoU>0.3){ best.bbox=bbox; best.last=now; }
+    else {
+      const t={
+        id: nextId++,
+        bbox,
+        last: now,
+        created: now,          // NYTT
+        happyStreak: 0,
+        counted: false,
+        seenFrames: 0,
+        peppText: null,
+        lastPepp: 0,
+        effectSet: null,
+        ageHist: []            // NYTT
+      };
+      tracks.push(t);
+      assignEffects(t);
+    }
     const tr=(best && bestIoU>0.3)? best : tracks[tracks.length-1];
 
     // emotion
     const exp=det.expressions||{}; let emo=null, conf=0; for (const [k,v] of Object.entries(exp)) if (v>conf){ emo=k; conf=v; }
-    const age = det.age ? Math.round(det.age) : null;
+    const rawAge = det.age ?? null;                        // flytande råvärde
+    const shownAge = getSmoothedAge(tr, now, rawAge);      // heltal / null
 
     // Heuristik: boosta "disgusted" vid stor mun-öppning (om landmarks finns)
     if (LANDMARKS_AVAILABLE && det.landmarks) {
@@ -326,11 +369,15 @@ async function tick(){
     const [x,y,w,h]=tr.bbox;
     const color=EMO_COLOR[emo]||'#24ff78';
     ctx.strokeStyle=color;
-    ctx.lineWidth = UI.faceBoxWidth;   // styrs via UI-konstant
+    ctx.lineWidth = UI.faceBoxWidth;
     ctx.strokeRect(x,y,w,h);
 
-    if (emo && conf>=EMO_CONF_MIN){ const label=`${EMO_SV[emo]||emo} · ${Math.round(conf*100)}%` + (age?` · ${age} år`:''); drawLabel(x,y,label); }
-    else if (age){ drawLabel(x,y,`${age} år`); }
+    if (emo && conf>=EMO_CONF_MIN){
+      const label=`${EMO_SV[emo]||emo} · ${Math.round(conf*100)}%` + (shownAge?` · ${shownAge} år`:'');
+      drawLabel(x,y,label);
+    } else if (shownAge){
+      drawLabel(x,y,`${shownAge} år`);
+    }
 
     // Emoji med centrum exakt i övre högra hörnet
     const emoji = EMO_EMOJI[emo] || "🙂";
@@ -339,7 +386,7 @@ async function tick(){
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(emoji, x + w, y);
-    // Återställ så våra box-texter alltid får rätt bakgrunder
+    // återställ align för våra textrutor
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
 
