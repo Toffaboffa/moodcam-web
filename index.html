@@ -28,7 +28,7 @@ const EMO_CONF_MIN = 0.40;
 
 async function loadModels() {
   // Modellerna laddas från din repo-mapp /models (måste finnas exakt som filer nedan i steg 3C)
-  const base = '/models/';
+  const base = './models/';
   await faceapi.nets.tinyFaceDetector.load(base);
   await faceapi.nets.faceExpressionNet.load(base);
   await faceapi.nets.ageGenderNet.load(base); // vi använder bara 'age'
