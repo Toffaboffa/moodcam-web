@@ -6,22 +6,34 @@
   <title>MoodCam (web)</title>
   <style>
     html,body{margin:0;height:100%;background:#0b0f14;color:#e7effa;font-family:system-ui,Segoe UI,Roboto,sans-serif}
-    #wrap{display:grid;place-items:center;height:100%}
-    video,canvas{max-width:96vw;max-height:96vh;border-radius:12px;box-shadow:0 12px 36px rgba(0,0,0,.5)}
+    #stage{display:grid;place-items:center;height:100%}
+    /* Viktigt: omslag runt video+canvas måste vara relativt placerat */
+    .layer-wrap{
+      position:relative; display:inline-block; border-radius:12px; overflow:hidden;
+      box-shadow:0 12px 36px rgba(0,0,0,.5);
+      max-width:96vw; max-height:96vh;
+    }
+    video{display:block; width:100%; height:auto;}
+    /* Canvas ligger ovanpå videon */
+    canvas{
+      position:absolute; inset:0; width:100%; height:100%;
+      pointer-events:none; /* klick går igenom */
+    }
     .warn{position:fixed;left:10px;bottom:10px;font-size:12px;opacity:.65}
     .btn{position:fixed;top:10px;left:10px;background:#111827;border:1px solid #1f2937;color:#e7effa;
          padding:8px 12px;border-radius:8px;cursor:pointer}
     .btn:disabled{opacity:.5;cursor:not-allowed}
   </style>
-  <!-- TensorFlow.js + face-api (vladmandic) från CDN -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.21.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js"></script>
 </head>
 <body>
 <button id="start" class="btn">Starta kamera</button>
-<div id="wrap">
-  <video id="video" autoplay muted playsinline></video>
-  <canvas id="overlay"></canvas>
+<div id="stage">
+  <div class="layer-wrap" id="wrap">
+    <video id="video" autoplay muted playsinline></video>
+    <canvas id="overlay"></canvas>
+  </div>
 </div>
 <div class="warn">Ge kameratillstånd i webbläsaren. Allt körs lokalt i din dator.</div>
 
@@ -31,11 +43,10 @@ const EMO_COLOR = {happy:"#28c728", angry:"#2a2ae0", sad:"#c07800", surprise:"#c
 const EMO_CONF_MIN = 0.40;
 
 async function loadModels() {
-  // VIKTIGT: relativ sökväg för GitHub Pages projekt-site
-  const base = './models/';
+  const base = './models/';               // relativ sökväg för GitHub Pages
   await faceapi.nets.tinyFaceDetector.load(base);
   await faceapi.nets.faceExpressionNet.load(base);
-  await faceapi.nets.ageGenderNet.load(base); // vi använder bara 'age'
+  await faceapi.nets.ageGenderNet.load(base); // vi använder bara age
 }
 
 function drawLabel(ctx, x, y, text) {
@@ -47,6 +58,16 @@ function drawLabel(ctx, x, y, text) {
   ctx.fillText(text, x, y);
 }
 
+// Håll canvas i exakt samma pixelstorlek som videons buffer
+function syncOverlaySize(video, canvas) {
+  // Intern bitmap-storlek (viktig för ritkoordinater)
+  canvas.width  = video.videoWidth;
+  canvas.height = video.videoHeight;
+  // Visuell storlek (följer videon i layouten)
+  canvas.style.width  = video.clientWidth + 'px';
+  canvas.style.height = video.clientHeight + 'px';
+}
+
 async function start() {
   const btn = document.getElementById('start');
   btn.disabled = true;
@@ -56,30 +77,32 @@ async function start() {
     const video = document.getElementById('video');
     const overlay = document.getElementById('overlay');
 
-    // Lägre upplösning => lägre CPU, bättre FPS
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { width: { ideal: 960 }, height: { ideal: 540 } }
     });
     video.srcObject = stream;
 
     await new Promise(r => video.onloadedmetadata = r);
-    overlay.width = video.videoWidth;
-    overlay.height = video.videoHeight;
-    const ctx = overlay.getContext('2d');
+    syncOverlaySize(video, overlay);
 
-    // Lägre inputSize => snabbare detektor (320 el. 256 vid behov)
+    // Uppdatera om fönstret ändrar storlek
+    new ResizeObserver(() => syncOverlaySize(video, overlay)).observe(document.getElementById('wrap'));
+
+    const ctx = overlay.getContext('2d');
     const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.6 });
 
     async function tick() {
       const detections = await faceapi
         .detectAllFaces(video, options)
         .withFaceExpressions()
-        .withAgeAndGender(); // ålder används, kön ignoreras
+        .withAgeAndGender();
 
       ctx.clearRect(0,0,overlay.width,overlay.height);
 
       for (const det of detections) {
         const { x, y, width, height } = det.detection.box;
+
+        // toppemotion + konfidens
         const emotions = det.expressions || {};
         let emo = null, conf = 0;
         for (const [k,v] of Object.entries(emotions)) if (v > conf) { emo = k; conf = v; }
