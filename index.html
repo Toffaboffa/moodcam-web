@@ -3,30 +3,37 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>MoodCam (web)</title>
+  <title>Vialundskolans MoodCam</title>
   <style>
     :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
     html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,Segoe UI,Roboto,sans-serif}
-    #stage{display:grid;grid-template-columns:1fr auto;gap:16px;height:100%;align-items:center;justify-items:center;padding:12px}
-    .layer-wrap{position:relative;display:inline-block;border-radius:12px;overflow:hidden;box-shadow:0 12px 36px rgba(0,0,0,.5);max-width:96vw;max-height:96vh}
-    video{display:block;width:100%;height:auto}
-    canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-    .hud{position:fixed;left:14px;bottom:14px;font-size:12px;opacity:.7}
-    .topbar{position:fixed;top:10px;left:10px;display:flex;gap:8px}
+    #stage{display:grid;grid-template-columns:1fr;gap:16px;height:100vh;align-items:center;justify-items:center;padding:12px}
+    .topbar{position:fixed;top:10px;left:10px;display:flex;gap:8px;z-index:10}
     .btn{background:var(--panel2);border:1px solid var(--border);color:var(--fg);padding:8px 12px;border-radius:8px;cursor:pointer}
     .btn:disabled{opacity:.5;cursor:not-allowed}
-    /* Settings panel */
-    #settings{position:fixed;right:12px;top:12px;width:300px;max-height:90vh;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px 12px 6px}
+
+    .layer-wrap{position:relative;display:inline-block;border-radius:12px;overflow:hidden;box-shadow:0 12px 36px rgba(0,0,0,.5);max-width:96vw;max-height:86vh}
+    video{display:block;width:100%;height:auto}
+    canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+
+    /* Centrera mood-mätaren precis vid nederkanten av kameran */
+    #meterWrap{position:absolute;left:50%;transform:translateX(-50%);bottom:0;
+      background:var(--panel);border:1px solid var(--border);border-bottom-left-radius:0;border-bottom-right-radius:0;border-top-left-radius:12px;border-top-right-radius:12px;
+      padding:8px 12px;width:min(560px,80%);z-index:5}
+    #meterBar{height:12px;background:#0d1218;border-radius:8px;overflow:hidden;border:1px solid var(--border)}
+    #meterFill{height:100%;width:0%;background:linear-gradient(90deg,#2dd4bf,#22c55e)}
+    #meterHead{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+
+    /* Settings-panel (dold tills man klickar) */
+    #settings{display:none;position:fixed;right:12px;top:52px;width:320px;max-height:85vh;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px 12px 8px;z-index:20}
     #settings h3{margin:6px 0 8px 0;font-size:16px}
     #settings .row{display:flex;justify-content:space-between;align-items:center;margin:8px 0}
     #settings label{font-size:14px}
-    #meterWrap{position:fixed;right:12px;bottom:12px;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:10px 12px;width:300px}
-    #meterBar{height:12px;background:#0d1218;border-radius:8px;overflow:hidden;border:1px solid var(--border)}
-    #meterFill{height:100%;width:0%;background:linear-gradient(90deg,#2dd4bf,#22c55e)}
-    .pepp{position:fixed;left:50%;transform:translateX(-50%);top:10px;background:rgba(0,0,0,.6);padding:8px 12px;border-radius:10px;border:1px solid var(--border);backdrop-filter:blur(6px);max-width:80vw;text-align:center}
-    .small{font-size:12px;opacity:.8}
     details{border:1px dashed var(--border);border-radius:8px;padding:6px}
     summary{cursor:pointer}
+    .small{font-size:12px;opacity:.8}
+
+    .hud{position:fixed;left:14px;bottom:14px;font-size:12px;opacity:.7}
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.21.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js"></script>
@@ -34,33 +41,33 @@
 <body>
   <div class="topbar">
     <button id="start" class="btn">Starta kamera</button>
-    <button id="nextPepp" class="btn" title="Visa nästa pepp direkt">Nästa pepp</button>
+    <button id="settingsBtn" class="btn">Settings</button>
   </div>
 
   <div id="stage">
     <div class="layer-wrap" id="wrap">
       <video id="video" autoplay muted playsinline></video>
       <canvas id="overlay"></canvas>
+
+      <!-- Mood meter: centrerad vid kamerans nedre kant -->
+      <div id="meterWrap">
+        <div id="meterHead">
+          <strong>Mood-mätare</strong>
+          <span id="meterVal" class="small">0</span>
+        </div>
+        <div id="meterBar"><div id="meterFill"></div></div>
+        <div class="small" style="margin-top:6px">Ökar när någon är <em>Glad</em> 5s i sträck, så smile for the camera.</div>
+      </div>
     </div>
   </div>
 
-  <!-- Settings -->
+  <!-- Settings (dold initialt) -->
   <div id="settings">
     <h3>Settings</h3>
 
     <div class="row">
       <label for="camSel">Kamera</label>
-      <select id="camSel" class="btn" style="width:170px"></select>
-    </div>
-
-    <div class="row">
-      <label>Halloween-tema</label>
-      <input type="checkbox" id="halloweenToggle">
-    </div>
-
-    <div class="row">
-      <label>Logga besökare</label>
-      <input type="checkbox" id="logToggle">
+      <select id="camSel" class="btn" style="width:190px"></select>
     </div>
 
     <div class="row">
@@ -80,7 +87,7 @@
       </div>
       <div class="row">
         <label for="peppCat">Kategori</label>
-        <select id="peppCat" class="btn" style="width:170px">
+        <select id="peppCat" class="btn" style="width:190px">
           <option value="all">Alla</option>
           <option value="skola">Skola</option>
           <option value="maende">Mående</option>
@@ -88,7 +95,27 @@
           <option value="van">Vänskap</option>
         </select>
       </div>
-      <p class="small">Visas var ~30:e sekund när aktiverat (eller klicka “Nästa pepp”).</p>
+      <p class="small">Visas i varje ansiktsruta, längst ned, och byts ~var 30:e sekund.</p>
+    </details>
+
+    <details style="margin-top:8px">
+      <summary>Teman (overlays)</summary>
+      <div class="row" style="margin-top:8px">
+        <label>Aktivera teman</label><input type="checkbox" id="themeToggle">
+      </div>
+      <div class="row">
+        <label for="themeSel">Tema</label>
+        <select id="themeSel" class="btn" style="width:190px">
+          <option value="none">—</option>
+          <option value="halloween">Halloween</option>
+          <option value="jul">Jul</option>
+          <option value="sommar">Sommar</option>
+          <option value="nyar">Nyår</option>
+          <option value="film">Film-tema</option>
+          <option value="gaming">Gaming</option>
+        </select>
+      </div>
+      <p class="small">Lägg PNG i <code>/img/&lt;tema&gt;/...</code> och en <code>manifest.json</code> (se kommentar i slutet av denna fil).</p>
     </details>
 
     <details style="margin-top:8px">
@@ -101,18 +128,7 @@
     </details>
   </div>
 
-  <!-- Mood meter -->
-  <div id="meterWrap">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-      <strong>Mood-mätare</strong>
-      <span id="meterVal" class="small">0</span>
-    </div>
-    <div id="meterBar"><div id="meterFill"></div></div>
-    <div class="small" style="margin-top:6px">Ökar när någon är <em>Glad</em> ≥ 5 s i sträck. Reset 19:30.</div>
-  </div>
-
-  <div class="pepp" id="peppBox" style="display:none"></div>
-  <div class="hud">Allt körs lokalt i din dator.</div>
+  <div class="hud">Allt körs lokalt i datorn. -Kristoffer</div>
 
 <script>
 /* ---------- Konstanter & state ---------- */
@@ -123,95 +139,72 @@ const EMO_COLOR = { happy:"#28c728", angry:"#2a2ae0", sad:"#c07800", surprised:"
 let EMO_CONF_MIN = 0.40;
 let DETECTOR_SIZE = 320;
 
-let halloweenMode = false;
-let logEnabled = false;
+let peppEnabled = false;
+let peppCat = 'all';
+
+let themeEnabled = false;
+let themeName = 'none';
+let themeManifest = null;     // { hats:[], glasses:[], ... } – laddas från /img/<tema>/manifest.json
+const themeCache = new Map(); // path -> HTMLImageElement
 
 let video, overlay, ctx;
 let currentStream = null;
 
-const tracks = [];            // {id, bbox:[x,y,w,h], last, happyStreak, counted, seenFrames}
+const tracks = [];            // {id,bbox:[x,y,w,h],last,happyStreak,counted,seenFrames,peppText,lastPepp,effectSet:{}}
 let nextId = 1;
 
 let lastFrameTime = performance.now();
 
-let meterTarget = 0;          // heltal som ska uppnås
-let meterShown = 0;           // visas med easing
+let meterTarget = 0;          // heltal
+let meterShown = 0;           // easing
 const METER_EASE = 0.05;
 
 const RESET_H = 19, RESET_M = 30;
 let lastResetDay = null;
 
-const visitorsByDay = JSON.parse(localStorage.getItem('moodcam.visitors') || '{}'); // {"2025-10-11": 12}
+const visitorsByDay = JSON.parse(localStorage.getItem('moodcam.visitors') || '{}');
 updateLogInfo();
 
 /* ---------- Hjälp ---------- */
-function todayKey() {
-  const d = new Date();
-  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), da = String(d.getDate()).padStart(2,'0');
+function todayKey(){
+  const d = new Date(); const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), da=String(d.getDate()).padStart(2,'0');
   return `${y}-${m}-${da}`;
 }
 
-function scheduleResetIfNeeded() {
+function scheduleResetIfNeeded(){
   const now = new Date();
   const key = todayKey();
-  if (lastResetDay !== key) {
-    const reset = new Date();
-    reset.setHours(RESET_H, RESET_M, 0, 0);
-    if (now >= reset) {
-      // redan passerat dagens reset -> nollställ och märk dagen
-      meterTarget = 0; meterShown = 0;
-      lastResetDay = key;
-    } else {
-      lastResetDay = key; // markerar att vi hanterar dagens fönster
-    }
-  }
-  // Om klockan råkar ticka över 19:30 under körning:
+  if (lastResetDay !== key) lastResetDay = key;
   const resetNow = new Date(); resetNow.setHours(RESET_H, RESET_M, 0, 0);
-  if (Math.abs((new Date()) - resetNow) < 1000) { // inom 1 s-fönster
-    meterTarget = 0; meterShown = 0;
-  }
+  if (now >= resetNow && (now - resetNow) < 1000) { meterTarget = 0; meterShown = 0; }
 }
 
-function iou(a, b) {
-  const [ax, ay, aw, ah] = a, [bx, by, bw, bh] = b;
-  const x1 = Math.max(ax, bx), y1 = Math.max(ay, by);
-  const x2 = Math.min(ax+aw, bx+bw), y2 = Math.min(ay+ah, by+bh);
-  const inter = Math.max(0, x2-x1) * Math.max(0, y2-y1);
-  const union = aw*ah + bw*bh - inter;
-  return union > 0 ? inter/union : 0;
+function iou(a,b){
+  const [ax,ay,aw,ah]=a,[bx,by,bw,bh]=b;
+  const x1=Math.max(ax,bx), y1=Math.max(ay,by), x2=Math.min(ax+aw,bx+bw), y2=Math.min(ay+ah,by+bh);
+  const inter=Math.max(0,x2-x1)*Math.max(0,y2-y1), union=aw*ah+bw*bh-inter;
+  return union>0? inter/union : 0;
 }
 
-function drawLabel(x, y, text) {
-  ctx.font = '16px system-ui';
-  const pad = 6, h = 18, w = ctx.measureText(text).width;
-  ctx.fillStyle = 'rgba(0,0,0,0.85)';
-  ctx.fillRect(x - pad, y - h - pad, w + pad*2, h + pad*2);
-  ctx.fillStyle = '#fff';
-  ctx.fillText(text, x, y);
+function drawLabel(x,y,text){
+  ctx.font='16px system-ui';
+  const pad=6, h=18, w=ctx.measureText(text).width;
+  ctx.fillStyle='rgba(0,0,0,0.85)';
+  ctx.fillRect(x-pad,y-h-pad,w+pad*2,h+pad*2);
+  ctx.fillStyle='#fff'; ctx.fillText(text,x,y);
 }
 
-function drawWitchHat(x, y, w, h) {
-  // enkel hat-triangel + brätte
-  ctx.fillStyle = 'rgba(30,30,30,0.9)';
-  ctx.beginPath();
-  ctx.moveTo(x + w*0.15, y + h*0.15);
-  ctx.lineTo(x + w*0.5,  y - h*0.25);
-  ctx.lineTo(x + w*0.85, y + h*0.15);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillRect(x + w*0.05, y + h*0.15, w*0.9, h*0.05);
+function drawCenteredBottom(x,y,w,h,text){
+  ctx.font='16px system-ui';
+  const pad=6, htxt=18, tw=ctx.measureText(text).width;
+  const cx = x + w/2 - tw/2;
+  const cy = y + h - 8;
+  ctx.fillStyle='rgba(0,0,0,0.7)';
+  ctx.fillRect(cx-pad,cy-htxt-pad,tw+pad*2,htxt+pad*2);
+  ctx.fillStyle='#fff'; ctx.fillText(text,cx,cy);
 }
 
-function drawZombieTint(x, y, w, h) {
-  ctx.fillStyle = 'rgba(0,180,0,0.18)';
-  ctx.fillRect(x, y, w, h);
-}
-
-function randEffect() {
-  return Math.random() < 0.5 ? 'hat' : 'zombie';
-}
-
-function syncOverlaySize() {
+function syncOverlaySize(){
   overlay.width  = video.videoWidth;
   overlay.height = video.videoHeight;
   overlay.style.width  = video.clientWidth + 'px';
@@ -220,232 +213,233 @@ function syncOverlaySize() {
 
 /* ---------- Pepp ---------- */
 const PEPP = {
-  skola: [
+  skola:[
     "Du gör klassrummet bättre bara genom att vara här.",
     "Kunskap + nyfikenhet = superkraft!",
     "Ställ en fråga – någon annan undrar samma sak."
   ],
-  maende: [
+  maende:[
     "Du duger precis som du är. 💙",
     "Ta tre djupa andetag – du fixar det.",
     "Små steg räknas också."
   ],
-  basta: [
+  basta:[
     "Gör ditt bästa idag – det räcker långt.",
     "Fokusera på nästa lilla förbättring.",
     "Misstag = data för att bli vassare."
   ],
-  van: [
+  van:[
     "Har du kramat någon idag? 🤗",
     "Säg till en vän hur mycket hen betyder för dig.",
     "Le mot någon – du ändrar någons dag."
   ]
 };
-let peppEnabled = false;
-let peppCat = 'all';
-let peppTimer = 0;
 const PEPP_INTERVAL = 30_000;
-
-function randomPepp() {
+function randomPepp(){
   const cats = peppCat === 'all' ? Object.keys(PEPP) : [peppCat];
   const cat = cats[Math.floor(Math.random()*cats.length)];
   const arr = PEPP[cat];
   return arr[Math.floor(Math.random()*arr.length)];
 }
 
-function showPepp(force=false) {
-  if (!peppEnabled && !force) return;
-  const box = document.getElementById('peppBox');
-  box.textContent = randomPepp();
-  box.style.display = 'block';
-  setTimeout(()=> box.style.display='none', 6000);
+/* ---------- Overlays (teman) ---------- */
+async function loadThemeManifest(theme){
+  themeManifest = null;
+  if (!theme || theme==='none') return;
+  try{
+    const resp = await fetch(`./img/${theme}/manifest.json`, {cache:'no-store'});
+    if(!resp.ok) return;
+    const data = await resp.json();
+    themeManifest = data; // {hats:[...], glasses:[...], teeth:[...], beard:[...], makeup:[...], mouths:[...]}
+    // Preload
+    const paths = [];
+    Object.values(data).forEach(arr => Array.isArray(arr) && arr.forEach(p => paths.push(`./img/${theme}/${p}`)));
+    await Promise.all(paths.map(p => cacheImage(p)));
+  }catch(e){ /* saknas -> inga overlays */ }
+}
+function cacheImage(src){
+  if (themeCache.has(src)) return themeCache.get(src).decode?.() ?? Promise.resolve();
+  const img = new Image(); img.src = src; themeCache.set(src,img);
+  return img.decode?.() ?? new Promise(res=> { img.onload=res; img.onerror=res; });
+}
+function pickFrom(arr){ return arr && arr.length ? arr[Math.floor(Math.random()*arr.length)] : null; }
+function assignEffects(track){
+  if (!themeEnabled || !themeManifest) { track.effectSet = null; return; }
+  track.effectSet = {
+    hat:   pickFrom(themeManifest.hats),
+    glasses: pickFrom(themeManifest.glasses),
+    teeth: pickFrom(themeManifest.teeth),
+    beard: pickFrom(themeManifest.beard),
+    makeup: pickFrom(themeManifest.makeup),
+    mouth: pickFrom(themeManifest.mouths)
+  };
+}
+function drawImageFit(imgPath, x,y,w,h){
+  const img = themeCache.get(`./img/${themeName}/${imgPath}`);
+  if (!img) return;
+  ctx.drawImage(img, x, y, w, h);
+}
+function drawEffects(track, x,y,w,h){
+  if (!themeEnabled || !track.effectSet) return;
+  const e = track.effectSet;
+  // Grova/roliga placeringar (utan landmärken):
+  if (e.hat)   drawImageFit(e.hat,   x + w*0.10, y - h*0.35, w*0.80, h*0.45);
+  if (e.glasses) drawImageFit(e.glasses, x + w*0.20, y + h*0.28, w*0.60, h*0.22);
+  if (e.teeth) drawImageFit(e.teeth, x + w*0.35, y + h*0.65, w*0.30, h*0.18);
+  if (e.beard) drawImageFit(e.beard, x + w*0.25, y + h*0.62, w*0.50, h*0.35);
+  if (e.makeup)drawImageFit(e.makeup,x + w*0.15, y + h*0.18, w*0.70, h*0.70);
+  if (e.mouth) drawImageFit(e.mouth, x + w*0.42, y + h*0.62, w*0.16, h*0.12);
 }
 
 /* ---------- Kamera ---------- */
-async function listCams(defaultIndex=1) {
-  const sel = document.getElementById('camSel');
-  sel.innerHTML = '';
-  const devices = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
-  devices.forEach((d,i) => {
-    const opt = document.createElement('option');
-    opt.value = d.deviceId;
-    opt.textContent = d.label || `Kamera ${i+1}`;
-    sel.appendChild(opt);
-  });
-  if (devices.length) {
-    sel.selectedIndex = Math.min(defaultIndex, devices.length-1);
-  }
+async function listCams(defaultIndex=1){
+  const sel=document.getElementById('camSel');
+  sel.innerHTML='';
+  const devices=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput');
+  devices.forEach((d,i)=>{ const opt=document.createElement('option'); opt.value=d.deviceId; opt.textContent=d.label||`Kamera ${i+1}`; sel.appendChild(opt); });
+  if (devices.length) sel.selectedIndex = Math.min(defaultIndex, devices.length-1);
 }
-
-async function startCamera(deviceId) {
-  if (currentStream) currentStream.getTracks().forEach(t => t.stop());
-  const constraints = deviceId ? { video: { deviceId: { exact: deviceId }, width: { ideal: 960 }, height: { ideal: 540 } } }
-                               : { video: { width: { ideal: 960 }, height: { ideal: 540 } } };
+async function startCamera(deviceId){
+  if (currentStream) currentStream.getTracks().forEach(t=>t.stop());
+  const constraints = deviceId ? { video: { deviceId:{exact:deviceId}, width:{ideal:960}, height:{ideal:540} } }
+                               : { video: { width:{ideal:960}, height:{ideal:540} } };
   currentStream = await navigator.mediaDevices.getUserMedia(constraints);
   video.srcObject = currentStream;
-  await new Promise(r => video.onloadedmetadata = r);
+  await new Promise(r=>video.onloadedmetadata=r);
   syncOverlaySize();
 }
 
 /* ---------- Modeller ---------- */
-async function loadModels() {
-  const base = './models/';
+async function loadModels(){
+  const base='./models/';
   await faceapi.nets.tinyFaceDetector.load(base);
   await faceapi.nets.faceExpressionNet.load(base);
   await faceapi.nets.ageGenderNet.load(base); // age only
 }
 
 /* ---------- Huvudloop ---------- */
-async function tick() {
+async function tick(){
   scheduleResetIfNeeded();
 
-  // fps delta
   const now = performance.now();
-  const dt = Math.min(0.1, (now - lastFrameTime) / 1000); // s
-  lastFrameTime = now;
+  const dt = Math.min(0.1, (now - lastFrameTime)/1000); lastFrameTime = now;
 
-  const options = new faceapi.TinyFaceDetectorOptions({ inputSize: DETECTOR_SIZE, scoreThreshold: 0.6 });
-
+  const options=new faceapi.TinyFaceDetectorOptions({ inputSize: DETECTOR_SIZE, scoreThreshold:0.6 });
   const dets = await faceapi.detectAllFaces(video, options).withFaceExpressions().withAgeAndGender();
 
   ctx.clearRect(0,0,overlay.width,overlay.height);
 
   // matcha mot tracks
-  const used = new Set();
-  for (const det of dets) {
-    const b = det.detection.box;
-    const bbox = [b.x, b.y, b.width, b.height];
-
-    // hitta bästa match via IoU
-    let best = null, bestIoU = 0;
-    tracks.forEach(t => {
-      const i = iou(t.bbox, bbox);
-      if (i > bestIoU) { bestIoU = i; best = t; }
-    });
-
-    if (best && bestIoU > 0.3) {
-      best.bbox = bbox;
-      best.last = now;
-    } else {
-      const t = { id: nextId++, bbox, last: now, happyStreak: 0, counted:false, seenFrames:0, effect: randEffect() };
+  for (const det of dets){
+    const b=det.detection.box; const bbox=[b.x,b.y,b.width,b.height];
+    // match
+    let best=null, bestIoU=0;
+    tracks.forEach(t=>{ const i=iou(t.bbox,bbox); if (i>bestIoU){bestIoU=i; best=t;} });
+    if (best && bestIoU>0.3){ best.bbox=bbox; best.last=now; }
+    else {
+      const t={ id:nextId++, bbox, last:now, happyStreak:0, counted:false, seenFrames:0, peppText:null, lastPepp:0, effectSet:null };
       tracks.push(t);
-      // räkna besökare när de stannar lite
+      assignEffects(t);
     }
+    const tr = (best && bestIoU>0.3) ? best : tracks[tracks.length-1];
 
     // emotion
-    const exp = det.expressions || {};
-    let emo = null, conf = 0;
-    for (const [k,v] of Object.entries(exp)) if (v > conf) { emo = k; conf = v; }
+    const exp=det.expressions||{}; let emo=null, conf=0; for (const [k,v] of Object.entries(exp)) if (v>conf){ emo=k; conf=v; }
     const age = det.age ? Math.round(det.age) : null;
 
-    // uppdatera happy-streak
-    const tr = best && bestIoU > 0.3 ? best : tracks[tracks.length-1];
     tr.seenFrames++;
-    if (!tr.counted && logEnabled && tr.seenFrames === 30) { // ~1s @ ~30fps
-      const key = todayKey();
-      visitorsByDay[key] = (visitorsByDay[key]||0) + 1;
-      localStorage.setItem('moodcam.visitors', JSON.stringify(visitorsByDay));
-      updateLogInfo();
-      tr.counted = true;
+    if (!tr.counted && tr.seenFrames===30){
+      const key=todayKey(); visitorsByDay[key]=(visitorsByDay[key]||0)+1;
+      localStorage.setItem('moodcam.visitors', JSON.stringify(visitorsByDay)); updateLogInfo();
+      tr.counted=true;
     }
 
-    if (emo === 'happy' && conf >= EMO_CONF_MIN) {
+    if (emo==='happy' && conf>=EMO_CONF_MIN){
       tr.happyStreak += dt;
-      if (tr.happyStreak >= 5) {
-        meterTarget += 1;            // höj målet
-        tr.happyStreak = 0;          // starta om streaken
-      }
-    } else {
-      tr.happyStreak = 0;
-    }
+      if (tr.happyStreak>=5){ meterTarget += 1; tr.happyStreak=0; }
+    } else tr.happyStreak=0;
 
-    // rita ruta + etikett
-    const [x,y,w,h] = bbox;
-    const color = EMO_COLOR[emo] || '#24ff78';
-    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
+    // ritning
+    const [x,y,w,h]=tr.bbox;
+    const color=EMO_COLOR[emo]||'#24ff78';
+    ctx.strokeStyle=color; ctx.lineWidth=2; ctx.strokeRect(x,y,w,h);
 
-    if (emo && conf >= EMO_CONF_MIN) {
-      const label = `${EMO_SV[emo]||emo} · ${Math.round(conf*100)}%` + (age ? ` · ${age} år` : '');
-      drawLabel(x, y, label);
-    } else if (age) {
-      drawLabel(x, y, `${age} år`);
-    }
+    if (emo && conf>=EMO_CONF_MIN){
+      const label=`${EMO_SV[emo]||emo} · ${Math.round(conf*100)}%` + (age?` · ${age} år`:'');
+      drawLabel(x,y,label);
+    } else if (age){ drawLabel(x,y,`${age} år`); }
 
-    // emoji i övre högra hörnet
+    // STOR emoji i övre högra hörnet (skalas med rutan)
     const emoji = EMO_EMOJI[emo] || "🙂";
-    ctx.font = '22px serif';
-    ctx.fillText(emoji, x + w - 22, y + 22);
+    const emSize = Math.max(28, Math.round(Math.min(w,h)*0.22));
+    ctx.font = `${emSize}px serif`;
+    ctx.fillText(emoji, x + w - emSize*1.05, y + emSize*0.9);
 
-    // halloween-effekter
-    if (halloweenMode) {
-      const eff = tr.effect;
-      if (eff === 'hat') drawWitchHat(x, y, w, h);
-      else if (eff === 'zombie') drawZombieTint(x, y, w, h);
+    // Tema-overlays (PNG) om aktiverat
+    drawEffects(tr, x,y,w,h);
+
+    // Pepp i nederkant av varje ruta
+    if (peppEnabled){
+      if (!tr.peppText || (now - tr.lastPepp) > PEPP_INTERVAL){
+        tr.peppText = randomPepp(); tr.lastPepp = now;
+      }
+      drawCenteredBottom(x,y,w,h,tr.peppText);
     }
   }
 
-  // ta bort utdöda tracks
-  for (let i = tracks.length-1; i >= 0; i--) {
-    if (now - tracks[i].last > 1500) tracks.splice(i,1);
-  }
+  // rensa gamla tracks
+  for (let i=tracks.length-1;i>=0;i--) if (now - tracks[i].last > 1500) tracks.splice(i,1);
 
   // meter easing
   meterShown = meterShown + (meterTarget - meterShown) * METER_EASE;
-  document.getElementById('meterFill').style.width = Math.max(0, Math.min(100, meterShown)) + '%';
+  document.getElementById('meterFill').style.width = Math.max(0,Math.min(100,meterShown)) + '%';
   document.getElementById('meterVal').textContent = Math.round(meterShown);
-
-  // pepp
-  peppTimer += (dt*1000);
-  if (peppTimer >= PEPP_INTERVAL) { peppTimer = 0; showPepp(); }
 
   requestAnimationFrame(tick);
 }
 
-/* ---------- UI wiring ---------- */
-function updateLogInfo() {
-  const list = Object.entries(visitorsByDay).sort(([a],[b]) => a.localeCompare(b));
-  const txt = list.length ? list.map(([d,n]) => `${d}: ${n}`).join(' · ') : 'Ingen logg än.';
-  const el = document.getElementById('logInfo'); if (el) el.textContent = txt;
+/* ---------- Logg / CSV ---------- */
+function updateLogInfo(){
+  const list=Object.entries(visitorsByDay).sort(([a],[b])=>a.localeCompare(b));
+  const txt=list.length? list.map(([d,n])=>`${d}: ${n}`).join(' · ') : 'Ingen logg än.';
+  const el=document.getElementById('logInfo'); if(el) el.textContent = txt;
+}
+function downloadCSV(){
+  const rows=[['date','visitors'], ...Object.entries(visitorsByDay)];
+  const csv=rows.map(r=>r.join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='moodcam_visitors.csv'; a.click(); URL.revokeObjectURL(a.href);
 }
 
-function downloadCSV() {
-  const rows = [['date','visitors'], ...Object.entries(visitorsByDay)];
-  const csv = rows.map(r => r.join(',')).join('\n');
-  const blob = new Blob([csv], {type:'text/csv'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'moodcam_visitors.csv';
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
-
-/* ---------- Start ---------- */
+/* ---------- Init & UI ---------- */
 (async function init(){
-  video = document.getElementById('video');
-  overlay = document.getElementById('overlay');
-  ctx = overlay.getContext('2d');
+  video=document.getElementById('video');
+  overlay=document.getElementById('overlay');
+  ctx=overlay.getContext('2d');
 
-  // Settings default
-  document.getElementById('halloweenToggle').addEventListener('change', e => halloweenMode = e.target.checked);
-  document.getElementById('logToggle').addEventListener('change', e => logEnabled = e.target.checked);
-  document.getElementById('conf').addEventListener('input', e => EMO_CONF_MIN = parseFloat(e.target.value));
-  document.getElementById('inputSize').addEventListener('input', e => DETECTOR_SIZE = parseInt(e.target.value,10));
-
-  document.getElementById('dlLog').addEventListener('click', downloadCSV);
-  document.getElementById('clearLog').addEventListener('click', () => { for (const k in visitorsByDay) delete visitorsByDay[k]; localStorage.setItem('moodcam.visitors','{}'); updateLogInfo(); });
-
-  document.getElementById('nextPepp').addEventListener('click', ()=> showPepp(true));
-  document.getElementById('peppToggle').addEventListener('change', e => { peppEnabled = e.target.checked; peppTimer = 0; if (peppEnabled) showPepp(true); });
-  document.getElementById('peppCat').addEventListener('change', e => peppCat = e.target.value);
-
-  await loadModels();
-  await listCams(1); // default = kameraindex 1 (dvs "andra" kameran)
-  document.getElementById('camSel').addEventListener('change', async e => {
-    await startCamera(e.target.value);
+  document.getElementById('settingsBtn').addEventListener('click', ()=>{
+    const s=document.getElementById('settings');
+    s.style.display = (s.style.display==='none' || !s.style.display) ? 'block' : 'none';
   });
 
-  document.getElementById('start').addEventListener('click', async () => {
-    const sel = document.getElementById('camSel');
+  document.getElementById('conf').addEventListener('input', e=> EMO_CONF_MIN=parseFloat(e.target.value));
+  document.getElementById('inputSize').addEventListener('input', e=> DETECTOR_SIZE=parseInt(e.target.value,10));
+
+  document.getElementById('peppToggle').addEventListener('change', e=> { peppEnabled=e.target.checked; });
+  document.getElementById('peppCat').addEventListener('change', e=> { peppCat=e.target.value; });
+
+  document.getElementById('themeToggle').addEventListener('change', e=> { themeEnabled=e.target.checked; });
+  document.getElementById('themeSel').addEventListener('change', async e=> { themeName=e.target.value; await loadThemeManifest(themeName); });
+
+  document.getElementById('dlLog').addEventListener('click', downloadCSV);
+  document.getElementById('clearLog').addEventListener('click', ()=> { for (const k in visitorsByDay) delete visitorsByDay[k]; localStorage.setItem('moodcam.visitors','{}'); updateLogInfo(); });
+
+  await loadModels();
+  await listCams(1);
+  document.getElementById('camSel').addEventListener('change', async e=> { await startCamera(e.target.value); });
+
+  document.getElementById('start').addEventListener('click', async ()=>{
+    const sel=document.getElementById('camSel');
     await startCamera(sel.value);
     new ResizeObserver(syncOverlaySize).observe(document.getElementById('wrap'));
     requestAnimationFrame(tick);
@@ -453,5 +447,21 @@ function downloadCSV() {
   });
 })();
 </script>
+
+<!--
+EXEMPEL PÅ /img/<tema>/manifest.json
+
+{
+  "hats":    ["hats/witch1.png", "hats/santa1.png"],
+  "glasses": ["glasses/nerd1.png", "glasses/sunglasses2.png"],
+  "teeth":   ["huggtander/fangs1.png"],
+  "beard":   ["skagg/beard1.png"],
+  "makeup":  ["smink/blush1.png"],
+  "mouths":  ["munnar/smile1.png"]
+}
+
+Lägg PNG-filer under /img/<tema>/<kategori>/... och uppdatera vägarna i manifestet.
+Om manifestet saknas: inga overlays ritas, men allt annat fungerar.
+-->
 </body>
 </html>
