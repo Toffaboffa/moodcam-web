@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Vialundskolans MoodCam</title>
+  <title>Vialundskolans MoodCam (v.1.0)</title>
   <style>
     :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
     html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,Segoe UI,Roboto,sans-serif}
@@ -59,7 +59,7 @@
           <span id="meterVal" class="small meterVal">0</span>
         </div>
         <div class="small" style="margin-top:3px">
-          Moodmätare – Ökar när någon är <em>Glad</em> 5s i sträck, så SMILE :D
+          Moodmätare – Börjar öka efter <em>3&nbsp;s</em>, så SMILE :D
         </div>
       </div>
     </div>
@@ -99,7 +99,7 @@
           <option value="van">Vänskap</option>
         </select>
       </div>
-      <p class="small">Visas i varje ansiktsruta, längst ned, och byts ~var 30:e sekund.</p>
+      <p class="small">Visas i varje ansiktsruta, längst ned. Låses per person tills de lämnar bild.</p>
     </details>
 
     <details style="margin-top:8px">
@@ -119,7 +119,7 @@
           <option value="gaming">Gaming</option>
         </select>
       </div>
-      <p class="small">Lägg PNG i <code>/img/&lt;tema&gt;/...</code> + <code>manifest.json</code>. Om manifest saknas ritas inga overlays.</p>
+      <p class="small">Lägg PNG i <code>/img/&lt;tema&gt;/...</code> + <code>manifest.json</code>.</p>
     </details>
 
     <details style="margin-top:8px">
@@ -129,6 +129,16 @@
         <button id="clearLog" class="btn" style="background:#581c1c;border-color:#7f1d1d">Nollställ</button>
       </div>
       <p id="logInfo" class="small"></p>
+    </details>
+
+    <details style="margin-top:8px">
+      <summary>Moodmätare – mål</summary>
+      <div class="row">
+        <label for="goalSec">Mål (sekunder glad-tid)</label>
+        <input id="goalSec" type="range" min="300" max="3600" step="60" value="900">
+      </div>
+      <p class="small">Nuvarande mål: <span id="goalLabel">900</span> s</p>
+      <p class="small">Tips: 600 = enklare, 1200–1800 = svårare att nå 100%.</p>
     </details>
   </div>
 
@@ -165,26 +175,46 @@ let LANDMARKS_AVAILABLE = false;
 let video, overlay, ctx;
 let currentStream = null;
 
-const tracks = [];            // {id,bbox:[x,y,w,h],last,created,happyStreak,counted,seenFrames,peppText,lastPepp,effectSet,ageHist}
+/* Tracks: ett objekt per ansikte i bild */
+const tracks = []; // {id,bbox:[x,y,w,h],last,created,seenFrames,counted,
+                   //  peppText,lastPepp,effectSet,ageHist:[],
+                   //  warm:0, contributing:false}
 let nextId = 1;
 
 let lastFrameTime = performance.now();
 
-let meterTarget = 0;
-let meterShown = 0;
-const METER_EASE = 0.05;
+/* ----- Moodmätare: person-sekunder-modell ----- */
+let HAPPY_PERSON_SECONDS = 0;          // ackumulerad glad-tid (vägd) för alla personer
+let METER_GOAL_SECONDS = 900;          // kan ändras i Settings
+let meterShown = 0;                    // visad procentsiffra (easing)
+const METER_EASE = 0.07;               // visuellt “ikapp-spring”
 
+/* Uppvärmning för att börja bidra */
+const HAPPY_WARMUP_SECONDS = 3;        // *** 3 s enligt din önskan ***
+const CONTRIB_WEIGHT_BY_CONF = true;   // valfritt: vikta med konfidenser (0.5..1)
+
+/* Reset av mätare (och logg) kl 19:30 */
 const RESET_H = 19, RESET_M = 30;
 
+/* Besökslogg */
 const visitorsByDay = JSON.parse(localStorage.getItem('moodcam.visitors') || '{}');
 updateLogInfo();
 
-/* --- NYTT: rullande fönster för ålder --- */
-const AGE_SMOOTH_WINDOW_MS = 10_000; // 10 s glidande medelvärde
+/* Smootha ålder: rullande fönster 10 s */
+const AGE_SMOOTH_WINDOW_MS = 10_000;
 
 /* ---------- Hjälp ---------- */
 function todayKey(){ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
-function scheduleResetIfNeeded(){ const now=new Date(); const reset=new Date(); reset.setHours(RESET_H, RESET_M, 0, 0); if (Math.abs(now-reset)<1000){ meterTarget=0; meterShown=0; } }
+
+function scheduleResetIfNeeded(){
+  const now=new Date();
+  const reset=new Date(); reset.setHours(RESET_H, RESET_M, 0, 0);
+  if (Math.abs(now - reset) < 1000){
+    HAPPY_PERSON_SECONDS = 0;     // nollställ ackumulatorn
+    meterShown = 0;
+  }
+}
+
 function iou(a,b){
   const [ax,ay,aw,ah] = a, [bx,by,bw,bh] = b;
   const x1 = Math.max(ax, bx);
@@ -232,25 +262,25 @@ function drawCenteredBottom(x, y, w, h, text){
   ctx.fillText(text, cx, cy);
 }
 
-function syncOverlaySize(){ overlay.width=video.videoWidth; overlay.height=video.videoHeight; overlay.style.width=video.clientWidth+'px'; overlay.style.height=video.clientHeight+'px'; }
+function syncOverlaySize(){
+  overlay.width=video.videoWidth;
+  overlay.height=video.videoHeight;
+  overlay.style.width=video.clientWidth+'px';
+  overlay.style.height=video.clientHeight+'px';
+}
 
-/* --- NYTT: glidande medelvärde för ålder per track --- */
+/* --- Glidande medelvärde för ålder per track --- */
 function getSmoothedAge(track, now, latestAge) {
   if (latestAge != null && !Number.isNaN(latestAge)) {
     track.ageHist.push({ t: now, a: latestAge });
   }
-  // rensa äldre än fönstret
   const cutoff = now - AGE_SMOOTH_WINDOW_MS;
   while (track.ageHist.length && track.ageHist[0].t < cutoff) {
     track.ageHist.shift();
   }
-
-  // <10 s i bild: visa råvärdet
   if (now - track.created < AGE_SMOOTH_WINDOW_MS) {
     return latestAge != null ? Math.round(latestAge) : null;
   }
-
-  // >=10 s: visa medel i fönstret
   if (!track.ageHist.length) return latestAge != null ? Math.round(latestAge) : null;
   const avg = track.ageHist.reduce((s, p) => s + p.a, 0) / track.ageHist.length;
   return Math.round(avg);
@@ -263,7 +293,6 @@ const PEPP = {
   basta:["Gör ditt bästa idag – det räcker långt.","Fokusera på nästa lilla förbättring.","Misstag = data för att bli vassare."],
   van:["Har du kramat någon idag? 🤗","Säg till en vän hur mycket hen betyder för dig.","Le mot någon – du ändrar någons dag."]
 };
-const PEPP_INTERVAL = 30_000;
 function randomPepp(){ const cats=peppCat==='all'?Object.keys(PEPP):[peppCat]; const cat=cats[Math.floor(Math.random()*cats.length)]; const arr=PEPP[cat]; return arr[Math.floor(Math.random()*arr.length)]; }
 
 /* ---------- Overlays (teman) ---------- */
@@ -332,24 +361,22 @@ async function tick(){
         id: nextId++,
         bbox,
         last: now,
-        created: now,          // NYTT
-        happyStreak: 0,
-        counted: false,
-        seenFrames: 0,
-        peppText: null,
-        lastPepp: 0,
+        created: now,
+        seenFrames: 0, counted: false,
+        peppText: null, lastPepp: 0,
         effectSet: null,
-        ageHist: []            // NYTT
+        ageHist: [],
+        warm: 0, contributing: false
       };
       tracks.push(t);
       assignEffects(t);
     }
     const tr=(best && bestIoU>0.3)? best : tracks[tracks.length-1];
 
-    // emotion
+    // emotion + ålder (smoothead)
     const exp=det.expressions||{}; let emo=null, conf=0; for (const [k,v] of Object.entries(exp)) if (v>conf){ emo=k; conf=v; }
-    const rawAge = det.age ?? null;                        // flytande råvärde
-    const shownAge = getSmoothedAge(tr, now, rawAge);      // heltal / null
+    const rawAge = det.age ?? null;
+    const shownAge = getSmoothedAge(tr, now, rawAge);
 
     // Heuristik: boosta "disgusted" vid stor mun-öppning (om landmarks finns)
     if (LANDMARKS_AVAILABLE && det.landmarks) {
@@ -361,9 +388,30 @@ async function tick(){
       }
     }
 
-    tr.seenFrames++; if(!tr.counted && tr.seenFrames===30){ const key=todayKey(); visitorsByDay[key]=(visitorsByDay[key]||0)+1; localStorage.setItem('moodcam.visitors', JSON.stringify(visitorsByDay)); updateLogInfo(); tr.counted=true; }
+    // besökslogg: räkna 1 gång per person efter ~1 sekund i bild
+    tr.seenFrames++;
+    if(!tr.counted && tr.seenFrames===30){
+      const key=todayKey();
+      visitorsByDay[key]=(visitorsByDay[key]||0)+1;
+      localStorage.setItem('moodcam.visitors', JSON.stringify(visitorsByDay));
+      updateLogInfo();
+      tr.counted=true;
+    }
 
-    if (emo==='happy' && conf>=EMO_CONF_MIN){ tr.happyStreak += dt; if(tr.happyStreak>=5){ meterTarget += 1; tr.happyStreak=0; } } else tr.happyStreak=0;
+    // *** Moodmätare: uppvärmning + bidrag ***
+    if (emo === 'happy' && conf >= EMO_CONF_MIN) {
+      tr.warm += dt;
+      if (!tr.contributing && tr.warm >= HAPPY_WARMUP_SECONDS) {
+        tr.contributing = true; // börjar bidra efter 3 s
+      }
+      if (tr.contributing) {
+        const weight = CONTRIB_WEIGHT_BY_CONF ? Math.max(0.5, conf) : 1; // 0.5..1
+        HAPPY_PERSON_SECONDS += dt * weight;
+      }
+    } else {
+      tr.warm = 0;
+      tr.contributing = false;
+    }
 
     // ritning
     const [x,y,w,h]=tr.bbox;
@@ -393,7 +441,7 @@ async function tick(){
     // Teman (PNG)
     drawEffects(tr, x,y,w,h);
 
-    // Pepp: lås per person (byter inte medan samma person är kvar)
+    // Pepp (låst per person)
     if (peppEnabled) {
       if (!tr.peppText) {
         tr.peppText = randomPepp();
@@ -407,8 +455,9 @@ async function tick(){
   const tnow = performance.now();
   for (let i=tracks.length-1;i>=0;i--) if (tnow - tracks[i].last > 1500) tracks.splice(i,1);
 
-  // meter easing
-  meterShown = meterShown + (meterTarget - meterShown) * METER_EASE;
+  // mätar-procent från ackumulatorn
+  const targetPct = Math.min(100, 100 * (HAPPY_PERSON_SECONDS / METER_GOAL_SECONDS));
+  meterShown = meterShown + (targetPct - meterShown) * METER_EASE;
   document.getElementById('meterFill').style.width = Math.max(0,Math.min(100,meterShown)) + '%';
   document.getElementById('meterVal').textContent = Math.round(meterShown);
 
@@ -416,14 +465,26 @@ async function tick(){
 }
 
 /* ---------- Logg / CSV ---------- */
-function updateLogInfo(){ const list=Object.entries(visitorsByDay).sort(([a],[b])=>a.localeCompare(b)); const txt=list.length? list.map(([d,n])=>`${d}: ${n}`).join(' · ') : 'Ingen logg än.'; const el=document.getElementById('logInfo'); if(el) el.textContent=txt; }
-function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visitorsByDay)]; const csv=rows.map(r=>r.join(',')).join('\n'); const blob=new Blob([csv],{type:'text/csv'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='moodcam_visitors.csv'; a.click(); URL.revokeObjectURL(a.href); }
+function updateLogInfo(){
+  const list=Object.entries(visitorsByDay).sort(([a],[b])=>a.localeCompare(b));
+  const txt=list.length? list.map(([d,n])=>`${d}: ${n}`).join(' · ') : 'Ingen logg än.';
+  const el=document.getElementById('logInfo'); if(el) el.textContent=txt;
+}
+function downloadCSV(){
+  const rows=[['date','visitors'],...Object.entries(visitorsByDay)];
+  const csv=rows.map(r=>r.join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='moodcam_visitors.csv'; a.click(); URL.revokeObjectURL(a.href);
+}
 
 /* ---------- Init & UI ---------- */
 (async function init(){
   video=document.getElementById('video'); overlay=document.getElementById('overlay'); ctx=overlay.getContext('2d');
 
-  document.getElementById('settingsBtn').addEventListener('click', ()=>{ const s=document.getElementById('settings'); s.style.display = (s.style.display==='none' || !s.style.display) ? 'block' : 'none'; });
+  document.getElementById('settingsBtn').addEventListener('click', ()=>{
+    const s=document.getElementById('settings');
+    s.style.display = (s.style.display==='none' || !s.style.display) ? 'block' : 'none';
+  });
 
   document.getElementById('conf').addEventListener('input', e=> EMO_CONF_MIN=parseFloat(e.target.value));
   document.getElementById('inputSize').addEventListener('input', e=> DETECTOR_SIZE=parseInt(e.target.value,10));
@@ -435,7 +496,21 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
   document.getElementById('themeSel').addEventListener('change', async e=> { themeName=e.target.value; await loadThemeManifest(themeName); });
 
   document.getElementById('dlLog').addEventListener('click', downloadCSV);
-  document.getElementById('clearLog').addEventListener('click', ()=> { localStorage.setItem('moodcam.visitors','{}'); for (const k in visitorsByDay) delete visitorsByDay[k]; updateLogInfo(); });
+  document.getElementById('clearLog').addEventListener('click', ()=>{
+    localStorage.setItem('moodcam.visitors','{}');
+    for (const k in visitorsByDay) delete visitorsByDay[k];
+    updateLogInfo();
+  });
+
+  // Mål-slider
+  const goalInput = document.getElementById('goalSec');
+  const goalLabel = document.getElementById('goalLabel');
+  METER_GOAL_SECONDS = parseInt(goalInput.value, 10);
+  goalLabel.textContent = METER_GOAL_SECONDS;
+  goalInput.addEventListener('input', e=>{
+    METER_GOAL_SECONDS = parseInt(e.target.value, 10);
+    goalLabel.textContent = METER_GOAL_SECONDS;
+  });
 
   await loadModels();
   await listCams(1);
@@ -444,7 +519,10 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
   document.getElementById('start').addEventListener('click', async ()=>{
     const sel=document.getElementById('camSel');
     await startCamera(sel.value);
-    new ResizeObserver(()=>{ overlay.width=video.videoWidth; overlay.height=video.videoHeight; overlay.style.width=video.clientWidth+'px'; overlay.style.height=video.clientHeight+'px'; }).observe(document.getElementById('wrap'));
+    new ResizeObserver(()=>{
+      overlay.width=video.videoWidth; overlay.height=video.videoHeight;
+      overlay.style.width=video.clientWidth+'px'; overlay.style.height=video.clientHeight+'px';
+    }).observe(document.getElementById('wrap'));
     requestAnimationFrame(tick);
     document.getElementById('start').disabled = true;
   });
