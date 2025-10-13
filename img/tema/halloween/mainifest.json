@@ -1,46 +1,6 @@
 {
-  "hats": [
-    "hats/basker.png",
-    "hats/cowboy.png",
-    "hats/hat1.png",
-    "hats/mössa.png",
-    "hats/pirat.png",
-    "hats/rishatt.png",
-    "hats/sommar.png",
-    "hats/tomteluva.png"
-  ],
-  "glasses": [
-    "glasses/glasses1.png",
-    "glasses/glasses2.png",
-    "glasses/glasses3.png",
-    "glasses/glasses4.png",
-    "glasses/glasses5.png",
-    "glasses/glasses6.png",
-    "glasses/glasses7.png"
-  ],
-  "mouths": [
-    "mouth/mouth1.png",
-    "mouth/mouth2.png",
-    "mouth/mouth3.png",
-    "mouth/mouth4.png",
-    "mouth/mouth5.png",
-    "mouth/mouth6.png",
-    "mouth/mouth7.png",
-    "mouth/mouth8.png"
-  ],
-  "beard": [
-    "facial_hair/beard1.png",
-    "facial_hair/musta1.png",
-    "facial_hair/musta2.png",
-    "facial_hair/musta3.png"
-  ],
+  "meta": { "name": "Test" },
   "eyes": [
-    "eyes/eyes1.png",
-    "eyes/eyes2.png",
-    "eyes/eyes3.png",
-    "eyes/eyes4.png",
-    "eyes/eyes5.png",
-    "eyes/eyes6.png",
-    "eyes/eyes7.png"
+    { "file": "assets/eyes/eyes1.png", "anchor": "eyes", "dx": 0.18, "dy": 0.22, "scale": 0.64 }
   ]
 }
