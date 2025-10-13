@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Vialundskolans MoodCam (v.1.1)</title>
+  <title>Vialundskolans MoodCam (v.1.1.1)</title>
   <style>
     :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
     html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,Segoe UI,Roboto,sans-serif}
@@ -13,7 +13,7 @@
     .btn:disabled{opacity:.5;cursor:not-allowed}
 
     .layer-wrap{position:relative;display:inline-block;border-radius:12px;overflow:hidden;box-shadow:0 12px 36px rgba(0,0,0,.5);max-width:96vw;max-height:86vh}
-    video{display:block;width:100%;height:auto;filter: none; /* uppdateras av filter-UI */}
+    video{display:block;width:100%;height:auto}
     canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 
     /* Moodmätare */
@@ -36,11 +36,10 @@
     details{border:1px dashed var(--border);border-radius:8px;padding:6px;margin-top:8px}
     summary{cursor:pointer}
     .desc{font-size:12px;opacity:.75;margin:4px 0 0}
-
-    .hud{position:fixed;left:14px;bottom:14px;font-size:12px;opacity:.7}
     input[type="range"]{width:190px}
     .two-col{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center}
-    .muted{opacity:.7}
+
+    .hud{position:fixed;left:14px;bottom:14px;font-size:12px;opacity:.7}
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.21.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js"></script>
@@ -109,22 +108,20 @@
       <div class="row">
         <label>Aktivera overlays</label><input type="checkbox" id="overlayToggle">
       </div>
-
       <div class="row">
         <label for="themeSel">Tema</label>
         <select id="themeSel" class="btn" style="width:220px"></select>
       </div>
-
       <div class="row"><label>Hattar</label><input type="checkbox" id="ovHats" checked></div>
       <div class="row"><label>Glasögon</label><input type="checkbox" id="ovGlasses" checked></div>
       <div class="row"><label>Ögon</label><input type="checkbox" id="ovEyes" checked></div>
       <div class="row"><label>Munnar</label><input type="checkbox" id="ovMouth" checked></div>
       <div class="row"><label>Skägg</label><input type="checkbox" id="ovBeard" checked></div>
-      <p class="desc">Bilder hämtas enligt valt tema: <code>img/tema/&lt;tema&gt;/manifest.json</code> (eller “Aktivt” från <code>img/manifest.json</code>).</p>
+      <p class="desc">Hämtas från <code>img/tema/&lt;tema&gt;/manifest.json</code> eller “Aktivt” (img/manifest.json).</p>
     </details>
 
     <details>
-      <summary>Kamera – bild (enkla filter)</summary>
+      <summary>Kamera – bild (filter)</summary>
       <div class="two-col">
         <label for="fBrightness">Ljusstyrka</label><input id="fBrightness" type="range" min="50" max="150" step="1" value="100">
         <label for="fContrast">Kontrast</label><input id="fContrast"   type="range" min="50" max="150" step="1" value="100">
@@ -132,22 +129,8 @@
         <label for="fHue">Ton (°)</label><input id="fHue"              type="range" min="-180" max="180" step="1" value="0">
         <label for="fTemp">Temperatur</label><input id="fTemp"         type="range" min="-50" max="50" step="1" value="0">
       </div>
-      <div class="row"><button id="filtersReset" class="btn">Återställ</button><span class="muted small">Påverkar bara visningen (inte detekteringen).</span></div>
-    </details>
-
-    <details>
-      <summary>Kamera – pro (om stöds)</summary>
-      <div id="proInfo" class="desc">Aktiveras efter kamerastart. Visas bara om din webbkamera & webbläsare stödjer det.</div>
-      <div id="proZoomWrap" class="row" style="display:none">
-        <label for="proZoom">Zoom</label><input id="proZoom" type="range">
-      </div>
-      <div id="proWBWrap" class="row" style="display:none">
-        <label for="proWB">Vitbalans (Kelvin)</label><input id="proWB" type="range">
-      </div>
-      <div id="proExpWrap" class="row" style="display:none">
-        <label for="proExp">Exponering</label><input id="proExp" type="range">
-      </div>
-      <p class="desc">Vissa kontroller kräver att “auto” stängs av av webbläsaren; det sker automatiskt om möjligt.</p>
+      <div class="row"><button id="filtersReset" class="btn">Återställ</button></div>
+      <p class="desc">Påverkar bara visningen (inte detekteringen).</p>
     </details>
 
     <details>
@@ -283,7 +266,7 @@ async function loadOverlayManifest(themeName){
       });
     }
     await Promise.all(toLoad);
-  } catch(e){}
+  } catch(e){ console.warn('Overlay manifest kunde inte laddas', e); }
 }
 function choiceWeighted(arr){
   if(!arr || !arr.length) return null;
@@ -336,138 +319,55 @@ function drawEffects(track,x,y,w,h){
   drawItem(e.beard, x,y,w,h);
 }
 
-/* ---------- Kamera: robust start + filter + pro ---------- */
+/* ---------- Kamera ---------- */
 async function listCams(defaultIndex=0){
   const sel = document.getElementById('camSel');
   sel.innerHTML = '';
-
-  const devices = (await navigator.mediaDevices.enumerateDevices())
-                  .filter(d => d.kind === 'videoinput');
-
-  let activeId = null;
-  try { activeId = currentStream?.getVideoTracks?.()[0]?.getSettings?.().deviceId || null; } catch(e){}
-
-  devices.forEach((d,i)=>{
-    const o = document.createElement('option');
-    o.value = d.deviceId || '';
-    o.textContent = d.label || `Kamera ${i+1}`;
-    if (activeId && d.deviceId === activeId) o.selected = true;
-    sel.appendChild(o);
-  });
-
-  if (!sel.value && devices.length) sel.selectedIndex = Math.min(defaultIndex, devices.length-1);
+  try{
+    const devices = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+    devices.forEach((d,i)=>{
+      const o=document.createElement('option'); o.value=d.deviceId||''; o.textContent=d.label||`Kamera ${i+1}`; sel.appendChild(o);
+    });
+    if (!sel.value && devices.length) sel.selectedIndex = Math.min(defaultIndex, devices.length-1);
+  }catch(e){ console.warn('enumerateDevices fel', e); }
 }
-
 async function startCamera(deviceId){
   try{
     if (currentStream) currentStream.getTracks().forEach(t => t.stop());
-
     const base = { width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:30}, facingMode:'user' };
     const constraints = { audio:false, video: deviceId ? { ...base, deviceId:{ exact: deviceId } } : base };
-
     currentStream = await navigator.mediaDevices.getUserMedia(constraints);
     video.srcObject = currentStream;
-
-    await new Promise(resolve => {
-      const onReady = () => { video.removeEventListener('loadedmetadata', onReady); resolve(); };
-      if (video.readyState >= 1) resolve(); else video.addEventListener('loadedmetadata', onReady);
-    });
+    await new Promise(r=>{ const f=()=>{video.removeEventListener('loadedmetadata',f); r();}; if(video.readyState>=1) r(); else video.addEventListener('loadedmetadata',f); });
     await video.play().catch(()=>{});
     syncOverlaySize();
-
-    await listCams(1);
-    await setupProControls(currentStream).catch(()=>{});
-
     return true;
-  } catch (err){
+  }catch(err){
     console.error('getUserMedia failed', err);
-    alert('Kunde inte starta kameran.\n\n' +
-          (err.name ? `${err.name}: ` : '') + (err.message || 'Okänt fel.') +
-          '\n\nTips: kör via https/localhost, stäng andra appar som använder kameran, eller välj en annan kamera.');
+    alert('Kunde inte starta kameran.\n' + (err.name?`${err.name}: `:'') + (err.message||'Okänt fel.') + '\nTips: kör över HTTPS/localhost och stäng andra appar som använder kameran.');
     return false;
   }
 }
 
-/* --- Enkla CSS-filter (ljus/kontrast m.m.) --- */
-function computeCssFilter(){
-  const b = +document.getElementById('fBrightness').value; // %
-  const c = +document.getElementById('fContrast').value;   // %
-  const s = +document.getElementById('fSaturate').value;   // %
-  const h = +document.getElementById('fHue').value;        // deg
-  const t = +document.getElementById('fTemp').value;       // -50..50 (kall..varm)
-
-  let chain = `brightness(${b}%) contrast(${c}%) saturate(${s}%) hue-rotate(${h}deg)`;
-  if (t !== 0){
-    const sep = Math.max(0, t) * 0.6; // varmare -> lite sepia
-    chain += ` sepia(${(sep/100).toFixed(3)}) hue-rotate(${(t*1.2).toFixed(1)}deg) saturate(${(100 + t*0.2).toFixed(1)}%)`;
-  }
-  return chain;
-}
-function applyCssFilter(){ video.style.filter = computeCssFilter(); }
-function resetFilters(){
-  document.getElementById('fBrightness').value = 100;
-  document.getElementById('fContrast').value   = 100;
-  document.getElementById('fSaturate').value   = 100;
-  document.getElementById('fHue').value        = 0;
-  document.getElementById('fTemp').value       = 0;
-  applyCssFilter();
-}
-
-/* --- Pro-kontroller via MediaTrack --- */
-async function setupProControls(stream){
-  videoTrack = stream.getVideoTracks()[0];
-  if (!videoTrack) return;
-
-  const caps = videoTrack.getCapabilities?.();
-  const sets = videoTrack.getSettings?.() || {};
-  if (!caps) return; // ej stödd
-
-  // Zoom
-  if (caps.zoom){
-    const z = document.getElementById('proZoom');
-    z.min = caps.zoom.min; z.max = caps.zoom.max; z.step = caps.zoom.step || 0.1;
-    z.value = sets.zoom ?? caps.zoom.min;
-    document.getElementById('proZoomWrap').style.display = 'flex';
-    z.oninput = async e=>{
-      try{ await videoTrack.applyConstraints({ advanced:[{ zoom: parseFloat(e.target.value) }]}); }catch{}
-    };
-  }
-
-  // White balance / kelvin
-  if (caps.colorTemperature){
-    const wb = document.getElementById('proWB');
-    wb.min = caps.colorTemperature.min; wb.max = caps.colorTemperature.max; wb.step = caps.colorTemperature.step || 50;
-    wb.value = sets.colorTemperature ?? Math.min(6500, wb.max);
-    document.getElementById('proWBWrap').style.display = 'flex';
-    wb.oninput = async e=>{
-      try{
-        await videoTrack.applyConstraints({ advanced:[{ whiteBalanceMode:'manual', colorTemperature: parseFloat(e.target.value) }]});
-      }catch{}
-    };
-  }
-
-  // Exponering (comp eller time)
-  if (caps.exposureCompensation){
-    const ex = document.getElementById('proExp');
-    ex.min = caps.exposureCompensation.min; ex.max = caps.exposureCompensation.max; ex.step = caps.exposureCompensation.step || 0.1;
-    ex.value = sets.exposureCompensation ?? 0;
-    document.getElementById('proExpWrap').style.display = 'flex';
-    ex.oninput = async e=>{
-      try{
-        await videoTrack.applyConstraints({ advanced:[{ exposureMode:'manual', exposureCompensation: parseFloat(e.target.value) }]});
-      }catch{}
-    };
-  } else if (caps.exposureTime){
-    const ex = document.getElementById('proExp');
-    ex.min = caps.exposureTime.min; ex.max = caps.exposureTime.max; ex.step = caps.exposureTime.step || 1;
-    ex.value = sets.exposureTime ?? caps.exposureTime.min;
-    document.getElementById('proExpWrap').style.display = 'flex';
-    ex.oninput = async e=>{
-      try{
-        await videoTrack.applyConstraints({ advanced:[{ exposureMode:'manual', exposureTime: parseFloat(e.target.value) }]});
-      }catch{}
-    };
-  }
+/* ---------- Modeller: starta laddning i bakgrunden ---------- */
+let modelsPromise=null;
+function ensureModelsLoading(){
+  if (modelsPromise) return modelsPromise;
+  modelsPromise = (async ()=>{
+    try{
+      const base='./models/';
+      await faceapi.nets.tinyFaceDetector.load(base);
+      await faceapi.nets.faceExpressionNet.load(base);
+      await faceapi.nets.ageGenderNet.load(base);
+      try{ await faceapi.nets.faceLandmark68Net.load(base); LANDMARKS_AVAILABLE=true; }catch(e){ LANDMARKS_AVAILABLE=false; }
+      return true;
+    }catch(e){
+      console.error('Kunde inte läsa in modeller', e);
+      alert('Kunde inte läsa in AI-modellerna från /models/.\nKontrollera att mappen /models/ finns och att filerna är åtkomliga.');
+      return false;
+    }
+  })();
+  return modelsPromise;
 }
 
 /* ---------- ”Äcklad”-heuristik ---------- */
@@ -511,7 +411,7 @@ async function tick(){
     const shownAge = getSmoothedAge(tr, now, det.age ?? null);
 
     // äcklad boost
-    if (LANDMARKS_AVAILABLE && det.landmarks) {
+    if (det.landmarks) {
       const mar=mouthAspectRatio(det.landmarks), happy=exp.happy||0, neutral=exp.neutral||0;
       if(mar>0.42 && happy<0.4 && neutral<0.6){ if((exp.disgusted||0)<0.6) exp.disgusted=0.6; if(exp.disgusted>=conf){ emo='disgusted'; conf=exp.disgusted; } }
     }
@@ -526,13 +426,13 @@ async function tick(){
       if(tr.contributing){ const wgt = CONTRIB_WEIGHT_BY_CONF ? Math.max(0.5, conf) : 1; HAPPY_PERSON_SECONDS += dt * wgt; }
     } else { tr.warm=0; tr.contributing=false; }
 
-    // rita box + etiketter
+    // rita
     const [x,y,w,h]=tr.bbox, color=EMO_COLOR[emo]||'#24ff78';
     ctx.strokeStyle=color; ctx.lineWidth=UI.faceBoxWidth; ctx.strokeRect(x,y,w,h);
     if(emo && conf>=EMO_CONF_MIN){ const label=`${EMO_SV[emo]||emo} · ${Math.round(conf*100)}%` + (shownAge?` · ${shownAge} år`:''); drawLabel(x,y,label); }
     else if(shownAge){ drawLabel(x,y,`${shownAge} år`); }
 
-    // stor emoji
+    // emoji
     const emoji=EMO_EMOJI[emo]||"🙂"; const emSize=Math.max(28, Math.round(Math.min(w,h)*0.22));
     ctx.font=`${emSize}px serif`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(emoji, x+w, y);
     ctx.textAlign='left'; ctx.textBaseline='alphabetic';
@@ -560,26 +460,26 @@ async function tick(){
 function updateLogInfo(){ const list=Object.entries(visitorsByDay).sort(([a],[b])=>a.localeCompare(b)); const txt=list.length? list.map(([d,n])=>`${d}: ${n}`).join(' · ') : 'Ingen logg än.'; const el=document.getElementById('logInfo'); if(el) el.textContent=txt; }
 function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visitorsByDay)]; const csv=rows.map(r=>r.join(',')).join('\n'); const blob=new Blob([csv],{type:'text/csv'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='moodcam_visitors.csv'; a.click(); URL.revokeObjectURL(a.href); }
 
-/* ---------- Init & UI ---------- */
+/* ---------- Init ---------- */
 (async function init(){
-  window.video = video = document.getElementById('video');
-  overlay=document.getElementById('overlay'); ctx=overlay.getContext('2d');
+  video=document.getElementById('video'); overlay=document.getElementById('overlay'); ctx=overlay.getContext('2d');
 
-  // Settings toggles
+  // BIND LISTENERS DIREKT (fixen!)
   document.getElementById('settingsBtn').addEventListener('click', ()=>{ const s=document.getElementById('settings'); s.style.display=(s.style.display==='none'||!s.style.display)?'block':'none'; });
   document.getElementById('conf').addEventListener('input', e=> EMO_CONF_MIN=parseFloat(e.target.value));
   document.getElementById('inputSize').addEventListener('input', e=> DETECTOR_SIZE=parseInt(e.target.value,10));
   document.getElementById('peppToggle').addEventListener('change', e=> { peppEnabled=e.target.checked; });
   document.getElementById('peppCat').addEventListener('change', e=> { peppCat=e.target.value; });
 
-  // CSS-filter UI
   ['fBrightness','fContrast','fSaturate','fHue','fTemp'].forEach(id=>{
-    document.getElementById(id).addEventListener('input', applyCssFilter);
+    document.getElementById(id).addEventListener('input', ()=>{ video.style.filter = `brightness(${fBrightness.value}%) contrast(${fContrast.value}%) saturate(${fSaturate.value}%) hue-rotate(${fHue.value}deg)` + ( (+fTemp.value!==0)?` sepia(${Math.max(0,+fTemp.value)*0.006}) hue-rotate(${(+fTemp.value*1.2).toFixed(1)}deg) saturate(${(100 + +fTemp.value*0.2).toFixed(1)}%)`:''); });
   });
-  document.getElementById('filtersReset').addEventListener('click', resetFilters);
-  applyCssFilter();
+  document.getElementById('filtersReset').addEventListener('click', ()=>{
+    fBrightness.value=100; fContrast.value=100; fSaturate.value=100; fHue.value=0; fTemp.value=0;
+    const evt=new Event('input'); fBrightness.dispatchEvent(evt);
+  });
+  fBrightness.dispatchEvent(new Event('input'));
 
-  // Theme dropdown
   const themeSel = document.getElementById('themeSel');
   THEMES.forEach(t=>{ const o=document.createElement('option'); o.value=t; o.textContent=t; themeSel.appendChild(o); });
   themeSel.value = selectedTheme;
@@ -599,39 +499,35 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
   document.getElementById('dlLog').addEventListener('click', downloadCSV);
   document.getElementById('clearLog').addEventListener('click', ()=> { localStorage.setItem('moodcam.visitors','{}'); for (const k in visitorsByDay) delete visitorsByDay[k]; updateLogInfo(); });
 
-  // mål
+  // Mål
   const goalInput=document.getElementById('goalSec'); const goalLabel=document.getElementById('goalLabel');
   METER_GOAL_SECONDS=parseInt(goalInput.value,10); goalLabel.textContent=METER_GOAL_SECONDS;
   goalInput.addEventListener('input', e=>{ METER_GOAL_SECONDS=parseInt(e.target.value,10); goalLabel.textContent=METER_GOAL_SECONDS; });
 
-  await loadModels();
-  await loadOverlayManifest(selectedTheme);
-  await listCams(1);
-  document.getElementById('camSel').addEventListener('change', async e=> { await startCamera(e.target.value); });
-
+  // Start-knapp — vänta på modeller OCH kamera vid klick
   document.getElementById('start').addEventListener('click', async ()=>{
+    // starta modell-laddning i bakgrunden om inte redan igång
+    const modelsOK = await ensureModelsLoading();
+    if (!modelsOK) return;
+
+    // kamera
     const sel=document.getElementById('camSel');
     const ok = await startCamera(sel.value);
     if (!ok) return;
+
+    // kör
     new ResizeObserver(()=>{ overlay.width=video.videoWidth; overlay.height=video.videoHeight; overlay.style.width=video.clientWidth+'px'; overlay.style.height=video.clientHeight+'px'; }).observe(document.getElementById('wrap'));
     requestAnimationFrame(tick);
     document.getElementById('start').disabled = true;
   });
+
+  // Lista kameror och ladda overlaymanifest — men låt det inte blockera knappen
+  listCams(1);
+  loadOverlayManifest(selectedTheme);
+  ensureModelsLoading(); // kicka igång i bakgrunden
 })();
 </script>
 
-<!--
-Lägg “assets” i: img/assets/<kategori>/...
-Skapa teman i: img/tema/<tema>/manifest.json  (referera till assets, t.ex. "assets/hats/tomteluva.png")
-
-Exempel på manifest (img/tema/test/manifest.json):
-{
-  "hats":    [{ "file": "assets/hats/tomteluva.png", "dx":0.10, "dy":-0.35, "scale":0.85 }],
-  "glasses": [{ "file": "assets/glasses/glasses3.png","dx":0.20, "dy":0.28, "scale":0.60 }],
-  "eyes":    [{ "file": "assets/eyes/eyes1.png",      "dx":0.18, "dy":0.22, "scale":0.64 }],
-  "mouth":   [{ "file": "assets/mouth/mouth6.png",    "dx":0.35, "dy":0.65, "scale":0.30 }],
-  "facial_hair":[{ "file": "assets/facial_hair/beard1.png","dx":0.25,"dy":0.62,"scale":0.50 }]
-}
--->
+<!-- Manifest-exempel kvar längst ned om du behöver -->
 </body>
 </html>
