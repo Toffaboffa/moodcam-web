@@ -1,1 +1,9 @@
-
+{
+  "eyes": [
+    { "file": "eyes/eyes1.png", "anchor": "eyes", "dx": 0.18, "dy": 0.22, "scale": 0.64 }
+  ],
+  "hats": [],
+  "glasses": [],
+  "mouth": [],
+  "facial_hair": []
+}
