@@ -110,7 +110,7 @@
       <div class="row"><label>Ögon</label><input type="checkbox" id="ovEyes" checked></div>
       <div class="row"><label>Munnar</label><input type="checkbox" id="ovMouth" checked></div>
       <div class="row"><label>Skägg</label><input type="checkbox" id="ovBeard" checked></div>
-      <p class="small">Bilderna hämtas från /img/<em>kategori</em>/ enligt <code>/img/manifest.json</code>.</p>
+      <p class="small">Bilderna hämtas från <code>/img/&lt;kategori&gt;/</code> enligt <code>/img/manifest.json</code>.</p>
     </details>
 
     <details style="margin-top:8px">
@@ -149,7 +149,7 @@ let DETECTOR_SIZE = 320;
 let peppEnabled = true;
 let peppCat = 'all';
 
-// Overlays (EN manifestfil)
+// Overlays (centralt manifest)
 let overlaysEnabled = false;
 const overlayUse = { hats:true, glasses:true, eyes:true, mouth:true, beard:true };
 let overlayManifest = null;       // laddas från /img/manifest.json
@@ -219,21 +219,15 @@ const PEPP={ skola:["Du gör klassrummet bättre bara genom att vara här.","Kun
   van:["Har du kramat någon idag? 🤗","Säg till en vän hur mycket hen betyder för dig.","Le mot någon – du ändrar någons dag."] };
 function randomPepp(){ const cats=peppCat==='all'?Object.keys(PEPP):[peppCat]; const cat=cats[Math.floor(Math.random()*cats.length)]; const arr=PEPP[cat]; return arr[Math.floor(Math.random()*arr.length)]; }
 
-/* --------- Overlays --------- */
-/* Manifestformat (i /img/manifest.json)
+/* --------- Overlays (centralt manifest) --------- */
+/* /img/manifest.json
 {
-  "hats": [
-    {"file":"hats/santa.png","anchor":"top","dx":0,"dy":-0.35,"scale":0.85},
-    ...
-  ],
-  "glasses":[{"file":"glasses/round.png","anchor":"eyes","dx":0,"dy":0.28,"scale":0.60}],
-  "eyes":[{"file":"eyes/laser.png","anchor":"eyes","dx":0,"dy":0.22,"scale":0.65}],
-  "mouth":[{"file":"mouth/fangs.png","anchor":"mouth","dx":0,"dy":0.64,"scale":0.30}],
-  "facial_hair":[{"file":"facial_hair/beard1.png","anchor":"chin","dx":0,"dy":0.62,"scale":0.50}]
+  "hats": [ {"file":"hats/tomteluva.png"}, {"file":"hats/pirat.png"} ],
+  "glasses": [ {"file":"glasses/glasses1.png"} ],
+  "eyes": [ {"file":"eyes/eyes3.png"} ],
+  "mouth": [ {"file":"mouth/mouth4.png"} ],
+  "facial_hair": [ {"file":"facial_hair/beard1.png"}, {"file":"facial_hair/musta2.png"} ]
 }
-- anchor styr var vi utgår från på ansiktsrutan (utan landmarks): "top", "eyes", "mouth", "chin".
-- dx/dy är relativa (0..1) från övre vänstra hörnet av rutan. scale är bredd i andel av rutans bredd.
-- Om metadata saknas används bra default för varje kategori.
 */
 async function loadOverlayManifest(){
   overlayManifest=null;
@@ -242,11 +236,10 @@ async function loadOverlayManifest(){
     if(!resp.ok) return;
     const data=await resp.json();
 
-    // Stava fel mapp? stöd för "faceal_hair"
+    // fallback om någon mapparm stavas "faceal_hair"
     if (!data.facial_hair && data.faceal_hair) data.facial_hair = data.faceal_hair;
 
     overlayManifest = data;
-    // ladda bilder
     const all = [];
     for (const cat of ["hats","glasses","eyes","mouth","facial_hair"]) {
       (data[cat]||[]).forEach(item=>{
@@ -263,7 +256,6 @@ async function loadOverlayManifest(){
 function choice(arr){ return arr && arr.length ? arr[Math.floor(Math.random()*arr.length)] : null; }
 function assignEffects(track){
   if(!overlaysEnabled || !overlayManifest){ track.effects=null; return; }
-  // välj en slumpmässig per aktiv kategori
   const e={};
   if (overlayUse.hats)    e.hat   = choice(overlayManifest.hats)||null;
   if (overlayUse.glasses) e.glass = choice(overlayManifest.glasses)||null;
@@ -277,14 +269,13 @@ function drawItem(meta, x,y,w,h){
   const path = `./img/${meta.file}`;
   const img = imgCache.get(path); if(!img) return;
 
-  // defaults per kategori om saknas
+  // Defaults per kategori om fält saknas
   const def = (()=> {
     if(meta.file.startsWith('hats/'))        return {anchor:'top',   dx:0.10, dy:-0.35, scale:0.80};
     if(meta.file.startsWith('glasses/'))     return {anchor:'eyes',  dx:0.20, dy:0.28, scale:0.60};
     if(meta.file.startsWith('eyes/'))        return {anchor:'eyes',  dx:0.18, dy:0.22, scale:0.64};
     if(meta.file.startsWith('mouth/'))       return {anchor:'mouth', dx:0.35, dy:0.65, scale:0.30};
-    if(meta.file.startsWith('facial_hair/') || meta.file.startsWith('faceal_hair/'))
-                                             return {anchor:'chin',  dx:0.25, dy:0.62, scale:0.50};
+    if(meta.file.startsWith('facial_hair/')) return {anchor:'chin',  dx:0.25, dy:0.62, scale:0.50};
     return {anchor:'eyes', dx:0.2, dy:0.2, scale:0.6};
   })();
 
@@ -451,25 +442,5 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
 })();
 </script>
 
-<!-- EXEMPEL: /img/manifest.json
-{
-  "hats": [
-    {"file":"hats/santa.png","dx":0.10,"dy":-0.35,"scale":0.85,"anchor":"top"},
-    {"file":"hats/witch.png"}  // använder default för hattar om fält saknas
-  ],
-  "glasses": [
-    {"file":"glasses/round.png","dx":0.20,"dy":0.28,"scale":0.60,"anchor":"eyes"}
-  ],
-  "eyes": [
-    {"file":"eyes/laser.png","dx":0.18,"dy":0.22,"scale":0.64,"anchor":"eyes"}
-  ],
-  "mouth": [
-    {"file":"mouth/fangs.png","dx":0.35,"dy":0.65,"scale":0.30,"anchor":"mouth"}
-  ],
-  "facial_hair": [
-    {"file":"facial_hair/beard1.png","dx":0.25,"dy":0.62,"scale":0.50,"anchor":"chin"}
-  ]
-}
--->
 </body>
 </html>
