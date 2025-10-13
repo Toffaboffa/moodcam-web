@@ -16,7 +16,6 @@
     video{display:block;width:100%;height:auto}
     canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 
-    /* Moodmätare */
     #meterWrap{
       position:absolute;left:50%;transform:translateX(-50%);bottom:0;
       background:var(--panel);border:1px solid var(--border);
@@ -28,7 +27,6 @@
     .meterVal{position:absolute;right:6px;top:-16px;opacity:.85}
     .small{font-size:12px;opacity:.8}
 
-    /* Settings */
     #settings{display:none;position:fixed;right:12px;top:52px;width:340px;max-height:85vh;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px 12px 8px;z-index:20}
     #settings h3{margin:6px 0 8px 0;font-size:16px}
     #settings .row{display:flex;justify-content:space-between;align-items:center;margin:8px 0}
@@ -105,12 +103,18 @@
       <div class="row">
         <label>Aktivera overlays</label><input type="checkbox" id="overlayToggle">
       </div>
+
+      <div class="row">
+        <label for="themeSel">Tema</label>
+        <select id="themeSel" class="btn" style="width:200px"></select>
+      </div>
+
       <div class="row"><label>Hattar</label><input type="checkbox" id="ovHats" checked></div>
       <div class="row"><label>Glasögon</label><input type="checkbox" id="ovGlasses" checked></div>
       <div class="row"><label>Ögon</label><input type="checkbox" id="ovEyes" checked></div>
       <div class="row"><label>Munnar</label><input type="checkbox" id="ovMouth" checked></div>
       <div class="row"><label>Skägg</label><input type="checkbox" id="ovBeard" checked></div>
-      <p class="small">Bilderna hämtas från <code>/img/&lt;kategori&gt;/</code> enligt <code>/img/manifest.json</code>.</p>
+      <p class="small">Bilder hämtas enligt valt tema: <code>img/tema/&lt;tema&gt;/manifest.json</code> (eller “Aktivt” från <code>img/manifest.json</code>).</p>
     </details>
 
     <details style="margin-top:8px">
@@ -140,7 +144,6 @@ const EMO_SV = { angry:"Arg", disgusted:"Äcklad", fearful:"Rädd", happy:"Glad"
 const EMO_EMOJI = { angry:"😠", disgusted:"🤢", fearful:"😨", happy:"😄", neutral:"😐", sad:"😢", surprised:"😮" };
 const EMO_COLOR = { happy:"#28c728", angry:"#2a2ae0", sad:"#c07800", surprised:"#c0c000", fearful:"#00b4b4", disgusted:"#00a078", neutral:"#b0b0b0" };
 
-// UI
 const UI = { labelFontSize:12, labelPad:3, pepFontSize:13, pepPad:3, faceBoxWidth:2 };
 
 let EMO_CONF_MIN = 0.40;
@@ -149,10 +152,13 @@ let DETECTOR_SIZE = 320;
 let peppEnabled = true;
 let peppCat = 'all';
 
-// Overlays (centralt manifest)
+/* --- Themes --- */
+const THEMES = ["Aktivt (img/manifest.json)","halloween","jul","sommar","skolstart","test"]; // lägg till dina
+let selectedTheme = THEMES[0]; // default
+
 let overlaysEnabled = false;
 const overlayUse = { hats:true, glasses:true, eyes:true, mouth:true, beard:true };
-let overlayManifest = null;       // laddas från /img/manifest.json
+let overlayManifest = null;       // laddas från tema-manifest
 const imgCache = new Map();
 
 let LANDMARKS_AVAILABLE = false;
@@ -160,12 +166,12 @@ let LANDMARKS_AVAILABLE = false;
 let video, overlay, ctx, currentStream=null;
 
 /* Tracks */
-const tracks = []; // {id,bbox,last,created,seenFrames,counted,peppText,ageHist:[],warm,contributing,effects:{}}
+const tracks = [];
 let nextId = 1;
 
 let lastFrameTime = performance.now();
 
-/* Mood-meter (person-sekunder) */
+/* Mood-meter */
 let HAPPY_PERSON_SECONDS = 0;
 let METER_GOAL_SECONDS = 900;
 let meterShown = 0;
@@ -219,49 +225,56 @@ const PEPP={ skola:["Du gör klassrummet bättre bara genom att vara här.","Kun
   van:["Har du kramat någon idag? 🤗","Säg till en vän hur mycket hen betyder för dig.","Le mot någon – du ändrar någons dag."] };
 function randomPepp(){ const cats=peppCat==='all'?Object.keys(PEPP):[peppCat]; const cat=cats[Math.floor(Math.random()*cats.length)]; const arr=PEPP[cat]; return arr[Math.floor(Math.random()*arr.length)]; }
 
-/* --------- Overlays (centralt manifest) --------- */
-/* /img/manifest.json
-{
-  "hats": [ {"file":"hats/tomteluva.png"}, {"file":"hats/pirat.png"} ],
-  "glasses": [ {"file":"glasses/glasses1.png"} ],
-  "eyes": [ {"file":"eyes/eyes3.png"} ],
-  "mouth": [ {"file":"mouth/mouth4.png"} ],
-  "facial_hair": [ {"file":"facial_hair/beard1.png"}, {"file":"facial_hair/musta2.png"} ]
-}
-*/
-async function loadOverlayManifest(){
+/* --------- Overlays & teman --------- */
+async function loadOverlayManifest(themeName){
   overlayManifest=null;
+  let url;
+  if (!themeName || themeName === THEMES[0]) {
+    // “Aktivt” läser direkt från img/manifest.json (om du vill ha ett frikopplat aktivt manifest)
+    url = './img/manifest.json';
+  } else {
+    url = `./img/tema/${themeName}/manifest.json`;
+  }
   try{
-    const resp=await fetch('./img/manifest.json',{cache:'no-store'});
+    const resp=await fetch(url,{cache:'no-store'});
     if(!resp.ok) return;
     const data=await resp.json();
 
-    // fallback om någon mapparm stavas "faceal_hair"
+    // fallback för stavfel "faceal_hair"
     if (!data.facial_hair && data.faceal_hair) data.facial_hair = data.faceal_hair;
 
     overlayManifest = data;
-    const all = [];
+
+    // förladda alla bilder
+    const toLoad=[];
     for (const cat of ["hats","glasses","eyes","mouth","facial_hair"]) {
       (data[cat]||[]).forEach(item=>{
         const path = `./img/${item.file}`;
         if(!imgCache.has(path)){
           const im=new Image(); im.src=path; imgCache.set(path, im);
-          all.push(im.decode?.() ?? new Promise(r=>{im.onload=r;im.onerror=r;}));
+          toLoad.push(im.decode?.() ?? new Promise(r=>{im.onload=r;im.onerror=r;}));
         }
       });
     }
-    await Promise.all(all);
+    await Promise.all(toLoad);
   } catch(e){}
 }
-function choice(arr){ return arr && arr.length ? arr[Math.floor(Math.random()*arr.length)] : null; }
+function choiceWeighted(arr){
+  if(!arr || !arr.length) return null;
+  const weights = arr.map(o => (o.prob ?? 1));
+  const sum = weights.reduce((a,b)=>a+b,0);
+  let r = Math.random()*sum;
+  for (let i=0;i<arr.length;i++){ r -= weights[i]; if (r <= 0) return arr[i]; }
+  return arr[arr.length-1];
+}
 function assignEffects(track){
   if(!overlaysEnabled || !overlayManifest){ track.effects=null; return; }
   const e={};
-  if (overlayUse.hats)    e.hat   = choice(overlayManifest.hats)||null;
-  if (overlayUse.glasses) e.glass = choice(overlayManifest.glasses)||null;
-  if (overlayUse.eyes)    e.eyes  = choice(overlayManifest.eyes)||null;
-  if (overlayUse.mouth)   e.mouth = choice(overlayManifest.mouth)||null;
-  if (overlayUse.beard)   e.beard = choice(overlayManifest.facial_hair)||null;
+  if (overlayUse.hats)    e.hat   = choiceWeighted(overlayManifest.hats) || null;
+  if (overlayUse.glasses) e.glass = choiceWeighted(overlayManifest.glasses) || null;
+  if (overlayUse.eyes)    e.eyes  = choiceWeighted(overlayManifest.eyes) || null;
+  if (overlayUse.mouth)   e.mouth = choiceWeighted(overlayManifest.mouth) || null;
+  if (overlayUse.beard)   e.beard = choiceWeighted(overlayManifest.facial_hair) || null;
   track.effects = e;
 }
 function drawItem(meta, x,y,w,h){
@@ -269,13 +282,12 @@ function drawItem(meta, x,y,w,h){
   const path = `./img/${meta.file}`;
   const img = imgCache.get(path); if(!img) return;
 
-  // Defaults per kategori om fält saknas
   const def = (()=> {
-    if(meta.file.startsWith('hats/'))        return {anchor:'top',   dx:0.10, dy:-0.35, scale:0.80};
-    if(meta.file.startsWith('glasses/'))     return {anchor:'eyes',  dx:0.20, dy:0.28, scale:0.60};
-    if(meta.file.startsWith('eyes/'))        return {anchor:'eyes',  dx:0.18, dy:0.22, scale:0.64};
-    if(meta.file.startsWith('mouth/'))       return {anchor:'mouth', dx:0.35, dy:0.65, scale:0.30};
-    if(meta.file.startsWith('facial_hair/')) return {anchor:'chin',  dx:0.25, dy:0.62, scale:0.50};
+    if(meta.file.startsWith('assets/hats/'))        return {anchor:'top',   dx:0.10, dy:-0.35, scale:0.80};
+    if(meta.file.startsWith('assets/glasses/'))     return {anchor:'eyes',  dx:0.20, dy:0.28, scale:0.60};
+    if(meta.file.startsWith('assets/eyes/'))        return {anchor:'eyes',  dx:0.18, dy:0.22, scale:0.64};
+    if(meta.file.startsWith('assets/mouth/'))       return {anchor:'mouth', dx:0.35, dy:0.65, scale:0.30};
+    if(meta.file.startsWith('assets/facial_hair/')) return {anchor:'chin',  dx:0.25, dy:0.62, scale:0.50};
     return {anchor:'eyes', dx:0.2, dy:0.2, scale:0.6};
   })();
 
@@ -284,7 +296,9 @@ function drawItem(meta, x,y,w,h){
   const bh = bw * (img.naturalHeight/img.naturalWidth);
   const px = x + (m.dx ?? def.dx) * w;
   const py = y + (m.dy ?? def.dy) * h;
-  ctx.drawImage(img, px, py, bw, bh);
+  ctx.save();
+  if (m.flipX) { ctx.translate(px+bw/2, py+bh/2); ctx.scale(-1,1); ctx.drawImage(img, -bw/2, -bh/2, bw, bh); ctx.restore(); }
+  else { ctx.drawImage(img, px, py, bw, bh); ctx.restore(); }
 }
 function drawEffects(track,x,y,w,h){
   if(!overlaysEnabled || !track.effects) return;
@@ -305,11 +319,11 @@ async function loadModels(){
   const base='./models/';
   await faceapi.nets.tinyFaceDetector.load(base);
   await faceapi.nets.faceExpressionNet.load(base);
-  await faceapi.nets.ageGenderNet.load(base); // age only
+  await faceapi.nets.ageGenderNet.load(base);
   try { await faceapi.nets.faceLandmark68Net.load(base); LANDMARKS_AVAILABLE = true; } catch(e){ LANDMARKS_AVAILABLE = false; }
 }
 
-/* ---------- ”Äcklad”-heuristik via mun-öppning ---------- */
+/* ---------- Heuristik för "äcklad" ---------- */
 function mouthAspectRatio(landmarks){
   if(!landmarks) return 0;
   const pts=landmarks.getMouth(), d=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
@@ -371,7 +385,7 @@ async function tick(){
     if(emo && conf>=EMO_CONF_MIN){ const label=`${EMO_SV[emo]||emo} · ${Math.round(conf*100)}%` + (shownAge?` · ${shownAge} år`:''); drawLabel(x,y,label); }
     else if(shownAge){ drawLabel(x,y,`${shownAge} år`); }
 
-    // stor emoji i övre högra hörnet
+    // stor emoji
     const emoji=EMO_EMOJI[emo]||"🙂"; const emSize=Math.max(28, Math.round(Math.min(w,h)*0.22));
     ctx.font=`${emSize}px serif`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(emoji, x+w, y);
     ctx.textAlign='left'; ctx.textBaseline='alphabetic';
@@ -403,15 +417,23 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
 (async function init(){
   video=document.getElementById('video'); overlay=document.getElementById('overlay'); ctx=overlay.getContext('2d');
 
+  // Settings toggles
   document.getElementById('settingsBtn').addEventListener('click', ()=>{ const s=document.getElementById('settings'); s.style.display=(s.style.display==='none'||!s.style.display)?'block':'none'; });
-
   document.getElementById('conf').addEventListener('input', e=> EMO_CONF_MIN=parseFloat(e.target.value));
   document.getElementById('inputSize').addEventListener('input', e=> DETECTOR_SIZE=parseInt(e.target.value,10));
-
   document.getElementById('peppToggle').addEventListener('change', e=> { peppEnabled=e.target.checked; });
   document.getElementById('peppCat').addEventListener('change', e=> { peppCat=e.target.value; });
 
-  // overlays UI
+  // Theme dropdown
+  const themeSel = document.getElementById('themeSel');
+  THEMES.forEach(t=>{ const o=document.createElement('option'); o.value=t; o.textContent=t; themeSel.appendChild(o); });
+  themeSel.value = selectedTheme;
+  themeSel.addEventListener('change', async e=>{
+    selectedTheme = e.target.value;
+    await loadOverlayManifest(selectedTheme);
+    tracks.forEach(t=>assignEffects(t)); // ge alla i bild nya effekter direkt
+  });
+
   document.getElementById('overlayToggle').addEventListener('change', e=> { overlaysEnabled=e.target.checked; tracks.forEach(t=>assignEffects(t)); });
   document.getElementById('ovHats').addEventListener('change', e=> { overlayUse.hats=e.target.checked; tracks.forEach(t=>assignEffects(t)); });
   document.getElementById('ovGlasses').addEventListener('change', e=> { overlayUse.glasses=e.target.checked; tracks.forEach(t=>assignEffects(t)); });
@@ -428,7 +450,7 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
   goalInput.addEventListener('input', e=>{ METER_GOAL_SECONDS=parseInt(e.target.value,10); goalLabel.textContent=METER_GOAL_SECONDS; });
 
   await loadModels();
-  await loadOverlayManifest(); // läs /img/manifest.json om den finns
+  await loadOverlayManifest(selectedTheme); // ladda starttema
   await listCams(1);
   document.getElementById('camSel').addEventListener('change', async e=> { await startCamera(e.target.value); });
 
@@ -442,5 +464,18 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
 })();
 </script>
 
+<!--
+Lägg bilder i: img/assets/<kategori>/...
+Skapa teman i: img/tema/<tema>/manifest.json  (referera till assets, t.ex. "assets/hats/tomteluva.png")
+
+Exempel på manifest (img/tema/test/manifest.json):
+{
+  "hats":    [{ "file": "assets/hats/tomteluva.png", "anchor":"top",   "dx":0.10, "dy":-0.35, "scale":0.85 }],
+  "glasses": [{ "file": "assets/glasses/glasses3.png","anchor":"eyes", "dx":0.20, "dy":0.28, "scale":0.60 }],
+  "eyes":    [{ "file": "assets/eyes/eyes1.png",      "anchor":"eyes", "dx":0.18, "dy":0.22, "scale":0.64 }],
+  "mouth":   [{ "file": "assets/mouth/mouth6.png",    "anchor":"mouth","dx":0.35, "dy":0.65, "scale":0.30 }],
+  "facial_hair":[{ "file": "assets/facial_hair/beard1.png","anchor":"chin","dx":0.25,"dy":0.62,"scale":0.50 }]
+}
+-->
 </body>
 </html>
