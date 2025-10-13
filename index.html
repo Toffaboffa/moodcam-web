@@ -16,7 +16,7 @@
     video{display:block;width:100%;height:auto}
     canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 
-    /* Kompakt moodmätare utan rubrik, centrerad vid kamerans nederkant */
+    /* Moodmätare */
     #meterWrap{
       position:absolute;left:50%;transform:translateX(-50%);bottom:0;
       background:var(--panel);border:1px solid var(--border);
@@ -28,8 +28,8 @@
     .meterVal{position:absolute;right:6px;top:-16px;opacity:.85}
     .small{font-size:12px;opacity:.8}
 
-    /* Settings-panel (dold tills man klickar) */
-    #settings{display:none;position:fixed;right:12px;top:52px;width:320px;max-height:85vh;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px 12px 8px;z-index:20}
+    /* Settings */
+    #settings{display:none;position:fixed;right:12px;top:52px;width:340px;max-height:85vh;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px 12px 8px;z-index:20}
     #settings h3{margin:6px 0 8px 0;font-size:16px}
     #settings .row{display:flex;justify-content:space-between;align-items:center;margin:8px 0}
     #settings label{font-size:14px}
@@ -52,7 +52,6 @@
       <video id="video" autoplay muted playsinline></video>
       <canvas id="overlay"></canvas>
 
-      <!-- Kompakt moodmätare -->
       <div id="meterWrap">
         <div id="meterBar">
           <div id="meterFill"></div>
@@ -65,13 +64,12 @@
     </div>
   </div>
 
-  <!-- Settings (dold initialt) -->
   <div id="settings">
     <h3>Settings</h3>
 
     <div class="row">
       <label for="camSel">Kamera</label>
-      <select id="camSel" class="btn" style="width:190px"></select>
+      <select id="camSel" class="btn" style="width:200px"></select>
     </div>
 
     <div class="row">
@@ -91,7 +89,7 @@
       </div>
       <div class="row">
         <label for="peppCat">Kategori</label>
-        <select id="peppCat" class="btn" style="width:190px">
+        <select id="peppCat" class="btn" style="width:200px">
           <option value="all">Alla</option>
           <option value="skola">Skola</option>
           <option value="maende">Mående</option>
@@ -99,27 +97,20 @@
           <option value="van">Vänskap</option>
         </select>
       </div>
-      <p class="small">Visas i varje ansiktsruta, längst ned. Låses per person tills de lämnar bild.</p>
+      <p class="small">Visas i varje ansiktsruta, låses per person tills de lämnar bild.</p>
     </details>
 
     <details style="margin-top:8px">
-      <summary>Teman (overlays)</summary>
-      <div class="row" style="margin-top:8px">
-        <label>Aktivera teman</label><input type="checkbox" id="themeToggle">
-      </div>
+      <summary>Overlays</summary>
       <div class="row">
-        <label for="themeSel">Tema</label>
-        <select id="themeSel" class="btn" style="width:190px">
-          <option value="none">—</option>
-          <option value="halloween">Halloween</option>
-          <option value="jul">Jul</option>
-          <option value="sommar">Sommar</option>
-          <option value="nyar">Nyår</option>
-          <option value="film">Film-tema</option>
-          <option value="gaming">Gaming</option>
-        </select>
+        <label>Aktivera overlays</label><input type="checkbox" id="overlayToggle">
       </div>
-      <p class="small">Lägg PNG i <code>/img/&lt;tema&gt;/...</code> + <code>manifest.json</code>.</p>
+      <div class="row"><label>Hattar</label><input type="checkbox" id="ovHats" checked></div>
+      <div class="row"><label>Glasögon</label><input type="checkbox" id="ovGlasses" checked></div>
+      <div class="row"><label>Ögon</label><input type="checkbox" id="ovEyes" checked></div>
+      <div class="row"><label>Munnar</label><input type="checkbox" id="ovMouth" checked></div>
+      <div class="row"><label>Skägg</label><input type="checkbox" id="ovBeard" checked></div>
+      <p class="small">Bilderna hämtas från /img/<em>kategori</em>/ enligt <code>/img/manifest.json</code>.</p>
     </details>
 
     <details style="margin-top:8px">
@@ -138,7 +129,6 @@
         <input id="goalSec" type="range" min="300" max="3600" step="60" value="900">
       </div>
       <p class="small">Nuvarande mål: <span id="goalLabel">900</span> s</p>
-      <p class="small">Tips: 600 = enklare, 1200–1800 = svårare att nå 100%.</p>
     </details>
   </div>
 
@@ -150,14 +140,8 @@ const EMO_SV = { angry:"Arg", disgusted:"Äcklad", fearful:"Rädd", happy:"Glad"
 const EMO_EMOJI = { angry:"😠", disgusted:"🤢", fearful:"😨", happy:"😄", neutral:"😐", sad:"😢", surprised:"😮" };
 const EMO_COLOR = { happy:"#28c728", angry:"#2a2ae0", sad:"#c07800", surprised:"#c0c000", fearful:"#00b4b4", disgusted:"#00a078", neutral:"#b0b0b0" };
 
-// ---- UI-justeringar ----
-const UI = {
-  labelFontSize: 12,   // px för "Glad · 95% · 12 år"
-  labelPad: 3,         // pixelmarginal runt texten (svarta rutan)
-  pepFontSize: 13,     // px för pepp-raden
-  pepPad: 3,           // pixelmarginal runt pepp-rutan
-  faceBoxWidth: 2      // linjetjocklek på rutan
-};
+// UI
+const UI = { labelFontSize:12, labelPad:3, pepFontSize:13, pepPad:3, faceBoxWidth:2 };
 
 let EMO_CONF_MIN = 0.40;
 let DETECTOR_SIZE = 320;
@@ -165,151 +149,161 @@ let DETECTOR_SIZE = 320;
 let peppEnabled = true;
 let peppCat = 'all';
 
-let themeEnabled = false;
-let themeName = 'none';
-let themeManifest = null;     // laddas från /img/<tema>/manifest.json
-const themeCache = new Map(); // path -> HTMLImageElement
+// Overlays (EN manifestfil)
+let overlaysEnabled = false;
+const overlayUse = { hats:true, glasses:true, eyes:true, mouth:true, beard:true };
+let overlayManifest = null;       // laddas från /img/manifest.json
+const imgCache = new Map();
 
 let LANDMARKS_AVAILABLE = false;
 
-let video, overlay, ctx;
-let currentStream = null;
+let video, overlay, ctx, currentStream=null;
 
-/* Tracks: ett objekt per ansikte i bild */
-const tracks = []; // {id,bbox:[x,y,w,h],last,created,seenFrames,counted,
-                   //  peppText,lastPepp,effectSet,ageHist:[],
-                   //  warm:0, contributing:false}
+/* Tracks */
+const tracks = []; // {id,bbox,last,created,seenFrames,counted,peppText,ageHist:[],warm,contributing,effects:{}}
 let nextId = 1;
 
 let lastFrameTime = performance.now();
 
-/* ----- Moodmätare: person-sekunder-modell ----- */
-let HAPPY_PERSON_SECONDS = 0;          // ackumulerad glad-tid (vägd) för alla personer
-let METER_GOAL_SECONDS = 900;          // kan ändras i Settings
-let meterShown = 0;                    // visad procentsiffra (easing)
-const METER_EASE = 0.07;               // visuellt “ikapp-spring”
+/* Mood-meter (person-sekunder) */
+let HAPPY_PERSON_SECONDS = 0;
+let METER_GOAL_SECONDS = 900;
+let meterShown = 0;
+const METER_EASE = 0.07;
+const HAPPY_WARMUP_SECONDS = 3;
+const CONTRIB_WEIGHT_BY_CONF = true;
 
-/* Uppvärmning för att börja bidra */
-const HAPPY_WARMUP_SECONDS = 3;        // *** 3 s enligt din önskan ***
-const CONTRIB_WEIGHT_BY_CONF = true;   // valfritt: vikta med konfidenser (0.5..1)
-
-/* Reset av mätare (och logg) kl 19:30 */
 const RESET_H = 19, RESET_M = 30;
 
-/* Besökslogg */
+/* Logg */
 const visitorsByDay = JSON.parse(localStorage.getItem('moodcam.visitors') || '{}');
 updateLogInfo();
 
-/* Smootha ålder: rullande fönster 10 s */
+/* Age smooth (10 s) */
 const AGE_SMOOTH_WINDOW_MS = 10_000;
 
 /* ---------- Hjälp ---------- */
 function todayKey(){ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function scheduleResetIfNeeded(){ const now=new Date(); const reset=new Date(); reset.setHours(RESET_H, RESET_M, 0, 0); if (Math.abs(now-reset)<1000){ HAPPY_PERSON_SECONDS=0; meterShown=0; } }
 
-function scheduleResetIfNeeded(){
-  const now=new Date();
-  const reset=new Date(); reset.setHours(RESET_H, RESET_M, 0, 0);
-  if (Math.abs(now - reset) < 1000){
-    HAPPY_PERSON_SECONDS = 0;     // nollställ ackumulatorn
-    meterShown = 0;
-  }
+function iou(a,b){ const [ax,ay,aw,ah]=a,[bx,by,bw,bh]=b; const x1=Math.max(ax,bx), y1=Math.max(ay,by), x2=Math.min(ax+aw,bx+bw), y2=Math.min(ay+ah,by+bh);
+  const inter=Math.max(0,x2-x1)*Math.max(0,y2-y1), union=aw*ah+bw*bh-inter; return union>0? inter/union:0; }
+
+function drawLabel(x,y,text){
+  ctx.font = `${UI.labelFontSize}px system-ui`; ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  const pad=UI.labelPad, h=UI.labelFontSize*1.2, w=ctx.measureText(text).width;
+  ctx.fillStyle='rgba(0,0,0,0.85)'; ctx.fillRect(x-pad,y-h-pad,w+pad*2,h+pad*2);
+  ctx.fillStyle='#fff'; ctx.fillText(text,x,y);
+}
+function drawCenteredBottom(x,y,w,h,text){
+  ctx.font = `${UI.pepFontSize}px system-ui`; ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  const pad=UI.pepPad, htxt=UI.pepFontSize*1.2, tw=ctx.measureText(text).width, cx=x+w/2-tw/2, cy=y+h-8;
+  ctx.fillStyle='rgba(0,0,0,0.7)'; ctx.fillRect(cx-pad,cy-htxt-pad,tw+pad*2,htxt+pad*2);
+  ctx.fillStyle='#fff'; ctx.fillText(text,cx,cy);
+}
+function syncOverlaySize(){ overlay.width=video.videoWidth; overlay.height=video.videoHeight; overlay.style.width=video.clientWidth+'px'; overlay.style.height=video.clientHeight+'px'; }
+
+/* Age smooth */
+function getSmoothedAge(track, now, latestAge){
+  if (latestAge!=null && !Number.isNaN(latestAge)) track.ageHist.push({t:now,a:latestAge});
+  const cutoff=now-AGE_SMOOTH_WINDOW_MS; while (track.ageHist.length && track.ageHist[0].t<cutoff) track.ageHist.shift();
+  if (now-track.created<AGE_SMOOTH_WINDOW_MS) return latestAge!=null?Math.round(latestAge):null;
+  if (!track.ageHist.length) return latestAge!=null?Math.round(latestAge):null;
+  const avg=track.ageHist.reduce((s,p)=>s+p.a,0)/track.ageHist.length; return Math.round(avg);
 }
 
-function iou(a,b){
-  const [ax,ay,aw,ah] = a, [bx,by,bw,bh] = b;
-  const x1 = Math.max(ax, bx);
-  const y1 = Math.max(ay, by);
-  const x2 = Math.min(ax + aw, bx + bw);
-  const y2 = Math.min(ay + ah, by + bh);
-  const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
-  const union = aw * ah + bw * bh - inter;
-  return union > 0 ? inter / union : 0;
-}
-
-function drawLabel(x, y, text){
-  const font = `${UI.labelFontSize}px system-ui`;
-  ctx.font = font;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
-
-  const pad = UI.labelPad;
-  const h   = UI.labelFontSize * 1.2;
-  const w   = ctx.measureText(text).width;
-
-  ctx.fillStyle = 'rgba(0,0,0,0.85)';
-  ctx.fillRect(x - pad, y - h - pad, w + pad*2, h + pad*2);
-
-  ctx.fillStyle = '#fff';
-  ctx.fillText(text, x, y);
-}
-
-function drawCenteredBottom(x, y, w, h, text){
-  const font = `${UI.pepFontSize}px system-ui`;
-  ctx.font = font;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
-
-  const pad = UI.pepPad;
-  const htxt = UI.pepFontSize * 1.2;
-  const tw = ctx.measureText(text).width;
-  const cx = x + w/2 - tw/2;
-  const cy = y + h - 8;
-
-  ctx.fillStyle = 'rgba(0,0,0,0.7)';
-  ctx.fillRect(cx - pad, cy - htxt - pad, tw + pad*2, htxt + pad*2);
-
-  ctx.fillStyle = '#fff';
-  ctx.fillText(text, cx, cy);
-}
-
-function syncOverlaySize(){
-  overlay.width=video.videoWidth;
-  overlay.height=video.videoHeight;
-  overlay.style.width=video.clientWidth+'px';
-  overlay.style.height=video.clientHeight+'px';
-}
-
-/* --- Glidande medelvärde för ålder per track --- */
-function getSmoothedAge(track, now, latestAge) {
-  if (latestAge != null && !Number.isNaN(latestAge)) {
-    track.ageHist.push({ t: now, a: latestAge });
-  }
-  const cutoff = now - AGE_SMOOTH_WINDOW_MS;
-  while (track.ageHist.length && track.ageHist[0].t < cutoff) {
-    track.ageHist.shift();
-  }
-  if (now - track.created < AGE_SMOOTH_WINDOW_MS) {
-    return latestAge != null ? Math.round(latestAge) : null;
-  }
-  if (!track.ageHist.length) return latestAge != null ? Math.round(latestAge) : null;
-  const avg = track.ageHist.reduce((s, p) => s + p.a, 0) / track.ageHist.length;
-  return Math.round(avg);
-}
-
-/* ---------- Pepp ---------- */
-const PEPP = {
-  skola:["Du gör klassrummet bättre bara genom att vara här.","Kunskap + nyfikenhet = superkraft!","Ställ en fråga – någon annan undrar samma sak."],
+/* Pepp */
+const PEPP={ skola:["Du gör klassrummet bättre bara genom att vara här.","Kunskap + nyfikenhet = superkraft!","Ställ en fråga – någon annan undrar samma sak."],
   maende:["Du duger precis som du är. 💙","Ta tre djupa andetag – du fixar det.","Små steg räknas också."],
   basta:["Gör ditt bästa idag – det räcker långt.","Fokusera på nästa lilla förbättring.","Misstag = data för att bli vassare."],
-  van:["Har du kramat någon idag? 🤗","Säg till en vän hur mycket hen betyder för dig.","Le mot någon – du ändrar någons dag."]
-};
+  van:["Har du kramat någon idag? 🤗","Säg till en vän hur mycket hen betyder för dig.","Le mot någon – du ändrar någons dag."] };
 function randomPepp(){ const cats=peppCat==='all'?Object.keys(PEPP):[peppCat]; const cat=cats[Math.floor(Math.random()*cats.length)]; const arr=PEPP[cat]; return arr[Math.floor(Math.random()*arr.length)]; }
 
-/* ---------- Overlays (teman) ---------- */
-async function loadThemeManifest(theme){
-  themeManifest=null; if(!theme || theme==='none') return;
-  try{
-    const resp=await fetch(`./img/${theme}/manifest.json`,{cache:'no-store'}); if(!resp.ok) return;
-    const data=await resp.json(); themeManifest=data;
-    const paths=[]; Object.values(data).forEach(arr=>Array.isArray(arr)&&arr.forEach(p=>paths.push(`./img/${theme}/${p}`)));
-    await Promise.all(paths.map(p=>cacheImage(p)));
-  }catch(e){}
+/* --------- Overlays --------- */
+/* Manifestformat (i /img/manifest.json)
+{
+  "hats": [
+    {"file":"hats/santa.png","anchor":"top","dx":0,"dy":-0.35,"scale":0.85},
+    ...
+  ],
+  "glasses":[{"file":"glasses/round.png","anchor":"eyes","dx":0,"dy":0.28,"scale":0.60}],
+  "eyes":[{"file":"eyes/laser.png","anchor":"eyes","dx":0,"dy":0.22,"scale":0.65}],
+  "mouth":[{"file":"mouth/fangs.png","anchor":"mouth","dx":0,"dy":0.64,"scale":0.30}],
+  "facial_hair":[{"file":"facial_hair/beard1.png","anchor":"chin","dx":0,"dy":0.62,"scale":0.50}]
 }
-function cacheImage(src){ if(themeCache.has(src)){ const im=themeCache.get(src); return im.decode?.()??Promise.resolve(); } const img=new Image(); img.src=src; themeCache.set(src,img); return img.decode?.()??new Promise(res=>{img.onload=res;img.onerror=res;}); }
-function pickFrom(arr){ return arr && arr.length ? arr[Math.floor(Math.random()*arr.length)] : null; }
-function assignEffects(track){ if(!themeEnabled || !themeManifest){ track.effectSet=null; return; } track.effectSet={ hat:pickFrom(themeManifest.hats), glasses:pickFrom(themeManifest.glasses), teeth:pickFrom(themeManifest.teeth), beard:pickFrom(themeManifest.beard), makeup:pickFrom(themeManifest.makeup), mouth:pickFrom(themeManifest.mouths)}; }
-function drawImageFit(imgPath,x,y,w,h){ const img=themeCache.get(`./img/${themeName}/${imgPath}`); if(!img) return; ctx.drawImage(img,x,y,w,h); }
-function drawEffects(track,x,y,w,h){ if(!themeEnabled || !track.effectSet) return; const e=track.effectSet; if(e.hat)drawImageFit(e.hat,x+w*0.10,y-h*0.35,w*0.80,h*0.45); if(e.glasses)drawImageFit(e.glasses,x+w*0.20,y+h*0.28,w*0.60,h*0.22); if(e.teeth)drawImageFit(e.teeth,x+w*0.35,y+h*0.65,w*0.30,h*0.18); if(e.beard)drawImageFit(e.beard,x+w*0.25,y+h*0.62,w*0.50,h*0.35); if(e.makeup)drawImageFit(e.makeup,x+w*0.15,y+h*0.18,w*0.70,h*0.70); if(e.mouth)drawImageFit(e.mouth,x+w*0.42,y+h*0.62,w*0.16,h*0.12); }
+- anchor styr var vi utgår från på ansiktsrutan (utan landmarks): "top", "eyes", "mouth", "chin".
+- dx/dy är relativa (0..1) från övre vänstra hörnet av rutan. scale är bredd i andel av rutans bredd.
+- Om metadata saknas används bra default för varje kategori.
+*/
+async function loadOverlayManifest(){
+  overlayManifest=null;
+  try{
+    const resp=await fetch('./img/manifest.json',{cache:'no-store'});
+    if(!resp.ok) return;
+    const data=await resp.json();
+
+    // Stava fel mapp? stöd för "faceal_hair"
+    if (!data.facial_hair && data.faceal_hair) data.facial_hair = data.faceal_hair;
+
+    overlayManifest = data;
+    // ladda bilder
+    const all = [];
+    for (const cat of ["hats","glasses","eyes","mouth","facial_hair"]) {
+      (data[cat]||[]).forEach(item=>{
+        const path = `./img/${item.file}`;
+        if(!imgCache.has(path)){
+          const im=new Image(); im.src=path; imgCache.set(path, im);
+          all.push(im.decode?.() ?? new Promise(r=>{im.onload=r;im.onerror=r;}));
+        }
+      });
+    }
+    await Promise.all(all);
+  } catch(e){}
+}
+function choice(arr){ return arr && arr.length ? arr[Math.floor(Math.random()*arr.length)] : null; }
+function assignEffects(track){
+  if(!overlaysEnabled || !overlayManifest){ track.effects=null; return; }
+  // välj en slumpmässig per aktiv kategori
+  const e={};
+  if (overlayUse.hats)    e.hat   = choice(overlayManifest.hats)||null;
+  if (overlayUse.glasses) e.glass = choice(overlayManifest.glasses)||null;
+  if (overlayUse.eyes)    e.eyes  = choice(overlayManifest.eyes)||null;
+  if (overlayUse.mouth)   e.mouth = choice(overlayManifest.mouth)||null;
+  if (overlayUse.beard)   e.beard = choice(overlayManifest.facial_hair)||null;
+  track.effects = e;
+}
+function drawItem(meta, x,y,w,h){
+  if(!meta) return;
+  const path = `./img/${meta.file}`;
+  const img = imgCache.get(path); if(!img) return;
+
+  // defaults per kategori om saknas
+  const def = (()=> {
+    if(meta.file.startsWith('hats/'))        return {anchor:'top',   dx:0.10, dy:-0.35, scale:0.80};
+    if(meta.file.startsWith('glasses/'))     return {anchor:'eyes',  dx:0.20, dy:0.28, scale:0.60};
+    if(meta.file.startsWith('eyes/'))        return {anchor:'eyes',  dx:0.18, dy:0.22, scale:0.64};
+    if(meta.file.startsWith('mouth/'))       return {anchor:'mouth', dx:0.35, dy:0.65, scale:0.30};
+    if(meta.file.startsWith('facial_hair/') || meta.file.startsWith('faceal_hair/'))
+                                             return {anchor:'chin',  dx:0.25, dy:0.62, scale:0.50};
+    return {anchor:'eyes', dx:0.2, dy:0.2, scale:0.6};
+  })();
+
+  const m = { ...def, ...meta };
+  const bw = w * (m.scale ?? def.scale);
+  const bh = bw * (img.naturalHeight/img.naturalWidth);
+  const px = x + (m.dx ?? def.dx) * w;
+  const py = y + (m.dy ?? def.dy) * h;
+  ctx.drawImage(img, px, py, bw, bh);
+}
+function drawEffects(track,x,y,w,h){
+  if(!overlaysEnabled || !track.effects) return;
+  const e=track.effects;
+  drawItem(e.hat,   x,y,w,h);
+  drawItem(e.glass, x,y,w,h);
+  drawItem(e.eyes,  x,y,w,h);
+  drawItem(e.mouth, x,y,w,h);
+  drawItem(e.beard, x,y,w,h);
+}
 
 /* ---------- Kamera ---------- */
 async function listCams(defaultIndex=1){ const sel=document.getElementById('camSel'); sel.innerHTML=''; const dev=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput'); dev.forEach((d,i)=>{ const o=document.createElement('option'); o.value=d.deviceId; o.textContent=d.label||`Kamera ${i+1}`; sel.appendChild(o); }); if(dev.length) sel.selectedIndex=Math.min(defaultIndex,dev.length-1); }
@@ -324,15 +318,12 @@ async function loadModels(){
   try { await faceapi.nets.faceLandmark68Net.load(base); LANDMARKS_AVAILABLE = true; } catch(e){ LANDMARKS_AVAILABLE = false; }
 }
 
-/* ---------- ”Äcklad”-heuristik m.h.a. mun-öppning ---------- */
+/* ---------- ”Äcklad”-heuristik via mun-öppning ---------- */
 function mouthAspectRatio(landmarks){
   if(!landmarks) return 0;
-  const pts = landmarks.getMouth();
-  const dist = (a,b)=> Math.hypot(a.x-b.x, a.y-b.y);
-  const top = pts[13], bot = pts[19], left = pts[0], right = pts[6];
-  const vert = dist(top, bot);
-  const horiz = dist(left, right) + 1e-6;
-  return vert / horiz;
+  const pts=landmarks.getMouth(), d=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+  const top=pts[13], bot=pts[19], left=pts[0], right=pts[6];
+  return d(top,bot)/(d(left,right)+1e-6);
 }
 
 /* ---------- Huvudloop ---------- */
@@ -354,109 +345,58 @@ async function tick(){
     const b = det.detection.box; const bbox=[b.x,b.y,b.width,b.height];
 
     // matcha track
-    let best=null, bestIoU=0; tracks.forEach(t=>{ const i=iou(t.bbox,bbox); if(i>bestIoU){bestIoU=i; best=t;} });
+    let best=null, bestIoU=0; for(const t of tracks){ const i=iou(t.bbox,bbox); if(i>bestIoU){bestIoU=i; best=t;} }
     if(best && bestIoU>0.3){ best.bbox=bbox; best.last=now; }
     else {
-      const t={
-        id: nextId++,
-        bbox,
-        last: now,
-        created: now,
-        seenFrames: 0, counted: false,
-        peppText: null, lastPepp: 0,
-        effectSet: null,
-        ageHist: [],
-        warm: 0, contributing: false
-      };
-      tracks.push(t);
-      assignEffects(t);
+      const t={ id:nextId++, bbox, last:now, created:now, seenFrames:0, counted:false,
+                peppText:null, ageHist:[], warm:0, contributing:false, effects:null };
+      tracks.push(t); if(overlaysEnabled) assignEffects(t);
     }
     const tr=(best && bestIoU>0.3)? best : tracks[tracks.length-1];
 
-    // emotion + ålder (smoothead)
-    const exp=det.expressions||{}; let emo=null, conf=0; for (const [k,v] of Object.entries(exp)) if (v>conf){ emo=k; conf=v; }
-    const rawAge = det.age ?? null;
-    const shownAge = getSmoothedAge(tr, now, rawAge);
+    // emotion/age
+    const exp=det.expressions||{}; let emo=null, conf=0; for(const [k,v] of Object.entries(exp)) if(v>conf){ emo=k; conf=v; }
+    const shownAge = getSmoothedAge(tr, now, det.age ?? null);
 
-    // Heuristik: boosta "disgusted" vid stor mun-öppning (om landmarks finns)
+    // äcklad boost
     if (LANDMARKS_AVAILABLE && det.landmarks) {
-      const mar = mouthAspectRatio(det.landmarks);
-      const happy = exp.happy || 0, neutral = exp.neutral || 0;
-      if (mar > 0.42 && happy < 0.4 && neutral < 0.6) {
-        if ((exp.disgusted || 0) < 0.6) exp.disgusted = 0.6;
-        if (exp.disgusted >= conf) { emo = 'disgusted'; conf = exp.disgusted; }
-      }
+      const mar=mouthAspectRatio(det.landmarks), happy=exp.happy||0, neutral=exp.neutral||0;
+      if(mar>0.42 && happy<0.4 && neutral<0.6){ if((exp.disgusted||0)<0.6) exp.disgusted=0.6; if(exp.disgusted>=conf){ emo='disgusted'; conf=exp.disgusted; } }
     }
 
-    // besökslogg: räkna 1 gång per person efter ~1 sekund i bild
-    tr.seenFrames++;
-    if(!tr.counted && tr.seenFrames===30){
-      const key=todayKey();
-      visitorsByDay[key]=(visitorsByDay[key]||0)+1;
-      localStorage.setItem('moodcam.visitors', JSON.stringify(visitorsByDay));
-      updateLogInfo();
-      tr.counted=true;
-    }
+    // logg
+    tr.seenFrames++; if(!tr.counted && tr.seenFrames===30){ const key=todayKey(); visitorsByDay[key]=(visitorsByDay[key]||0)+1; localStorage.setItem('moodcam.visitors', JSON.stringify(visitorsByDay)); updateLogInfo(); tr.counted=true; }
 
-    // *** Moodmätare: uppvärmning + bidrag ***
-    if (emo === 'happy' && conf >= EMO_CONF_MIN) {
+    // mood-ackumulator
+    if (emo==='happy' && conf>=EMO_CONF_MIN){
       tr.warm += dt;
-      if (!tr.contributing && tr.warm >= HAPPY_WARMUP_SECONDS) {
-        tr.contributing = true; // börjar bidra efter 3 s
-      }
-      if (tr.contributing) {
-        const weight = CONTRIB_WEIGHT_BY_CONF ? Math.max(0.5, conf) : 1; // 0.5..1
-        HAPPY_PERSON_SECONDS += dt * weight;
-      }
-    } else {
-      tr.warm = 0;
-      tr.contributing = false;
-    }
+      if(!tr.contributing && tr.warm>=HAPPY_WARMUP_SECONDS) tr.contributing=true;
+      if(tr.contributing){ const wgt = CONTRIB_WEIGHT_BY_CONF ? Math.max(0.5, conf) : 1; HAPPY_PERSON_SECONDS += dt * wgt; }
+    } else { tr.warm=0; tr.contributing=false; }
 
-    // ritning
-    const [x,y,w,h]=tr.bbox;
-    const color=EMO_COLOR[emo]||'#24ff78';
-    ctx.strokeStyle=color;
-    ctx.lineWidth = UI.faceBoxWidth;
-    ctx.strokeRect(x,y,w,h);
+    // rita box + etiketter
+    const [x,y,w,h]=tr.bbox, color=EMO_COLOR[emo]||'#24ff78';
+    ctx.strokeStyle=color; ctx.lineWidth=UI.faceBoxWidth; ctx.strokeRect(x,y,w,h);
+    if(emo && conf>=EMO_CONF_MIN){ const label=`${EMO_SV[emo]||emo} · ${Math.round(conf*100)}%` + (shownAge?` · ${shownAge} år`:''); drawLabel(x,y,label); }
+    else if(shownAge){ drawLabel(x,y,`${shownAge} år`); }
 
-    if (emo && conf>=EMO_CONF_MIN){
-      const label=`${EMO_SV[emo]||emo} · ${Math.round(conf*100)}%` + (shownAge?` · ${shownAge} år`:'');
-      drawLabel(x,y,label);
-    } else if (shownAge){
-      drawLabel(x,y,`${shownAge} år`);
-    }
+    // stor emoji i övre högra hörnet
+    const emoji=EMO_EMOJI[emo]||"🙂"; const emSize=Math.max(28, Math.round(Math.min(w,h)*0.22));
+    ctx.font=`${emSize}px serif`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(emoji, x+w, y);
+    ctx.textAlign='left'; ctx.textBaseline='alphabetic';
 
-    // Emoji med centrum exakt i övre högra hörnet
-    const emoji = EMO_EMOJI[emo] || "🙂";
-    const emSize = Math.max(28, Math.round(Math.min(w,h)*0.22));
-    ctx.font = `${emSize}px serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(emoji, x + w, y);
-    // återställ align för våra textrutor
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'alphabetic';
-
-    // Teman (PNG)
+    // overlays
     drawEffects(tr, x,y,w,h);
 
-    // Pepp (låst per person)
-    if (peppEnabled) {
-      if (!tr.peppText) {
-        tr.peppText = randomPepp();
-        tr.lastPepp = now;
-      }
-      drawCenteredBottom(x, y, w, h, tr.peppText);
-    }
+    // pepp
+    if (peppEnabled){ if(!tr.peppText) tr.peppText = randomPepp(); drawCenteredBottom(x,y,w,h,tr.peppText); }
   }
 
-  // rensa gamla tracks
-  const tnow = performance.now();
-  for (let i=tracks.length-1;i>=0;i--) if (tnow - tracks[i].last > 1500) tracks.splice(i,1);
+  // städa
+  const tnow=performance.now(); for(let i=tracks.length-1;i>=0;i--) if(tnow-tracks[i].last>1500) tracks.splice(i,1);
 
-  // mätar-procent från ackumulatorn
-  const targetPct = Math.min(100, 100 * (HAPPY_PERSON_SECONDS / METER_GOAL_SECONDS));
+  // mätare
+  const targetPct = Math.min(100, 100*(HAPPY_PERSON_SECONDS/METER_GOAL_SECONDS));
   meterShown = meterShown + (targetPct - meterShown) * METER_EASE;
   document.getElementById('meterFill').style.width = Math.max(0,Math.min(100,meterShown)) + '%';
   document.getElementById('meterVal').textContent = Math.round(meterShown);
@@ -465,26 +405,14 @@ async function tick(){
 }
 
 /* ---------- Logg / CSV ---------- */
-function updateLogInfo(){
-  const list=Object.entries(visitorsByDay).sort(([a],[b])=>a.localeCompare(b));
-  const txt=list.length? list.map(([d,n])=>`${d}: ${n}`).join(' · ') : 'Ingen logg än.';
-  const el=document.getElementById('logInfo'); if(el) el.textContent=txt;
-}
-function downloadCSV(){
-  const rows=[['date','visitors'],...Object.entries(visitorsByDay)];
-  const csv=rows.map(r=>r.join(',')).join('\n');
-  const blob=new Blob([csv],{type:'text/csv'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='moodcam_visitors.csv'; a.click(); URL.revokeObjectURL(a.href);
-}
+function updateLogInfo(){ const list=Object.entries(visitorsByDay).sort(([a],[b])=>a.localeCompare(b)); const txt=list.length? list.map(([d,n])=>`${d}: ${n}`).join(' · ') : 'Ingen logg än.'; const el=document.getElementById('logInfo'); if(el) el.textContent=txt; }
+function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visitorsByDay)]; const csv=rows.map(r=>r.join(',')).join('\n'); const blob=new Blob([csv],{type:'text/csv'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='moodcam_visitors.csv'; a.click(); URL.revokeObjectURL(a.href); }
 
 /* ---------- Init & UI ---------- */
 (async function init(){
   video=document.getElementById('video'); overlay=document.getElementById('overlay'); ctx=overlay.getContext('2d');
 
-  document.getElementById('settingsBtn').addEventListener('click', ()=>{
-    const s=document.getElementById('settings');
-    s.style.display = (s.style.display==='none' || !s.style.display) ? 'block' : 'none';
-  });
+  document.getElementById('settingsBtn').addEventListener('click', ()=>{ const s=document.getElementById('settings'); s.style.display=(s.style.display==='none'||!s.style.display)?'block':'none'; });
 
   document.getElementById('conf').addEventListener('input', e=> EMO_CONF_MIN=parseFloat(e.target.value));
   document.getElementById('inputSize').addEventListener('input', e=> DETECTOR_SIZE=parseInt(e.target.value,10));
@@ -492,51 +420,55 @@ function downloadCSV(){
   document.getElementById('peppToggle').addEventListener('change', e=> { peppEnabled=e.target.checked; });
   document.getElementById('peppCat').addEventListener('change', e=> { peppCat=e.target.value; });
 
-  document.getElementById('themeToggle').addEventListener('change', e=> { themeEnabled=e.target.checked; });
-  document.getElementById('themeSel').addEventListener('change', async e=> { themeName=e.target.value; await loadThemeManifest(themeName); });
+  // overlays UI
+  document.getElementById('overlayToggle').addEventListener('change', e=> { overlaysEnabled=e.target.checked; tracks.forEach(t=>assignEffects(t)); });
+  document.getElementById('ovHats').addEventListener('change', e=> { overlayUse.hats=e.target.checked; tracks.forEach(t=>assignEffects(t)); });
+  document.getElementById('ovGlasses').addEventListener('change', e=> { overlayUse.glasses=e.target.checked; tracks.forEach(t=>assignEffects(t)); });
+  document.getElementById('ovEyes').addEventListener('change', e=> { overlayUse.eyes=e.target.checked; tracks.forEach(t=>assignEffects(t)); });
+  document.getElementById('ovMouth').addEventListener('change', e=> { overlayUse.mouth=e.target.checked; tracks.forEach(t=>assignEffects(t)); });
+  document.getElementById('ovBeard').addEventListener('change', e=> { overlayUse.beard=e.target.checked; tracks.forEach(t=>assignEffects(t)); });
 
   document.getElementById('dlLog').addEventListener('click', downloadCSV);
-  document.getElementById('clearLog').addEventListener('click', ()=>{
-    localStorage.setItem('moodcam.visitors','{}');
-    for (const k in visitorsByDay) delete visitorsByDay[k];
-    updateLogInfo();
-  });
+  document.getElementById('clearLog').addEventListener('click', ()=> { localStorage.setItem('moodcam.visitors','{}'); for (const k in visitorsByDay) delete visitorsByDay[k]; updateLogInfo(); });
 
-  // Mål-slider
-  const goalInput = document.getElementById('goalSec');
-  const goalLabel = document.getElementById('goalLabel');
-  METER_GOAL_SECONDS = parseInt(goalInput.value, 10);
-  goalLabel.textContent = METER_GOAL_SECONDS;
-  goalInput.addEventListener('input', e=>{
-    METER_GOAL_SECONDS = parseInt(e.target.value, 10);
-    goalLabel.textContent = METER_GOAL_SECONDS;
-  });
+  // mål
+  const goalInput=document.getElementById('goalSec'); const goalLabel=document.getElementById('goalLabel');
+  METER_GOAL_SECONDS=parseInt(goalInput.value,10); goalLabel.textContent=METER_GOAL_SECONDS;
+  goalInput.addEventListener('input', e=>{ METER_GOAL_SECONDS=parseInt(e.target.value,10); goalLabel.textContent=METER_GOAL_SECONDS; });
 
   await loadModels();
+  await loadOverlayManifest(); // läs /img/manifest.json om den finns
   await listCams(1);
   document.getElementById('camSel').addEventListener('change', async e=> { await startCamera(e.target.value); });
 
   document.getElementById('start').addEventListener('click', async ()=>{
     const sel=document.getElementById('camSel');
     await startCamera(sel.value);
-    new ResizeObserver(()=>{
-      overlay.width=video.videoWidth; overlay.height=video.videoHeight;
-      overlay.style.width=video.clientWidth+'px'; overlay.style.height=video.clientHeight+'px';
-    }).observe(document.getElementById('wrap'));
+    new ResizeObserver(()=>{ overlay.width=video.videoWidth; overlay.height=video.videoHeight; overlay.style.width=video.clientWidth+'px'; overlay.style.height=video.clientHeight+'px'; }).observe(document.getElementById('wrap'));
     requestAnimationFrame(tick);
     document.getElementById('start').disabled = true;
   });
 })();
 </script>
 
-<!-- Exempel på tema-manifest
+<!-- EXEMPEL: /img/manifest.json
 {
-  "hats":    ["hats/santa1.png", "hats/witch1.png"],
-  "glasses": ["glasogon/nerd1.png", "glasogon/sunglasses2.png"],
-  "teeth":   ["huggtander/fangs1.png"],
-  "beard":   ["skagg/beard1.png"],
-  "makeup":  ["smink/blush1.png"],
-  "mouths":  ["munnar/smile1.png"]
+  "hats": [
+    {"file":"hats/santa.png","dx":0.10,"dy":-0.35,"scale":0.85,"anchor":"top"},
+    {"file":"hats/witch.png"}  // använder default för hattar om fält saknas
+  ],
+  "glasses": [
+    {"file":"glasses/round.png","dx":0.20,"dy":0.28,"scale":0.60,"anchor":"eyes"}
+  ],
+  "eyes": [
+    {"file":"eyes/laser.png","dx":0.18,"dy":0.22,"scale":0.64,"anchor":"eyes"}
+  ],
+  "mouth": [
+    {"file":"mouth/fangs.png","dx":0.35,"dy":0.65,"scale":0.30,"anchor":"mouth"}
+  ],
+  "facial_hair": [
+    {"file":"facial_hair/beard1.png","dx":0.25,"dy":0.62,"scale":0.50,"anchor":"chin"}
+  ]
 }
 -->
 </body>
