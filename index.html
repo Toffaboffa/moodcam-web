@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Vialundskolans MoodCam (v.1.0)</title>
   <style>
-    :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
+    :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e;--vf:none}
     html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,Segoe UI,Roboto,sans-serif}
     #stage{display:grid;grid-template-columns:1fr;gap:16px;height:100vh;align-items:center;justify-items:center;padding:12px}
     .topbar{position:fixed;top:10px;left:10px;display:flex;gap:8px;z-index:10}
@@ -13,7 +13,7 @@
     .btn:disabled{opacity:.5;cursor:not-allowed}
 
     .layer-wrap{position:relative;display:inline-block;border-radius:12px;overflow:hidden;box-shadow:0 12px 36px rgba(0,0,0,.5);max-width:96vw;max-height:86vh}
-    video{display:block;width:100%;height:auto}
+    video{display:block;width:100%;height:auto;filter:var(--vf)}
     canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 
     #meterWrap{
@@ -117,6 +117,26 @@
       <p class="small">Bilder hämtas enligt valt tema: <code>img/tema/&lt;tema&gt;/manifest.json</code> (eller “Aktivt” från <code>img/manifest.json</code>).</p>
     </details>
 
+    <!-- NYTT: Snabba filter (CSS) -->
+    <details style="margin-top:8px">
+      <summary>Kamera – filter (snabba)</summary>
+      <div class="row"><label>Ljusstyrka</label><input id="fBright" type="range" min="0.5" max="1.8" step="0.01" value="1"></div>
+      <div class="row"><label>Kontrast</label><input id="fContrast" type="range" min="0.5" max="1.8" step="0.01" value="1"></div>
+      <div class="row"><label>Färg (saturation)</label><input id="fSat" type="range" min="0" max="2" step="0.01" value="1"></div>
+      <div class="row"><label>Varm ↔ Kall</label><input id="fTemp" type="range" min="-1" max="1" step="0.01" value="0"></div>
+      <div class="row"><button id="fReset" class="btn">Återställ</button></div>
+      <p class="small">Påverkar bara hur videon visas, inte hårdvaran.</p>
+    </details>
+
+    <!-- NYTT: Proffsläge (ImageCapture / hårdvara) -->
+    <details style="margin-top:8px">
+      <summary>Kamera – proffsläge (om stöds)</summary>
+      <div id="proInfo" class="small">Söker stöd…</div>
+      <div class="row"><label>Vitbalans (K)</label><input id="wbTemp" type="range" disabled></div>
+      <div class="row"><label>Exponeringskomp.</label><input id="expComp" type="range" disabled></div>
+      <div class="row"><label>ISO</label><input id="iso" type="range" disabled></div>
+    </details>
+
     <details style="margin-top:8px">
       <summary>Besökslogg</summary>
       <div class="row" style="margin-top:8px">
@@ -153,12 +173,12 @@ let peppEnabled = true;
 let peppCat = 'all';
 
 /* --- Themes --- */
-const THEMES = ["Aktivt (img/manifest.json)","halloween","jul","sommar","skolstart","test"]; // lägg till dina
-let selectedTheme = THEMES[0]; // default
+const THEMES = ["Aktivt (img/manifest.json)","halloween","jul","sommar","skolstart","test"];
+let selectedTheme = THEMES[0];
 
 let overlaysEnabled = false;
 const overlayUse = { hats:true, glasses:true, eyes:true, mouth:true, beard:true };
-let overlayManifest = null;       // laddas från tema-manifest
+let overlayManifest = null;
 const imgCache = new Map();
 
 let LANDMARKS_AVAILABLE = false;
@@ -229,23 +249,13 @@ function randomPepp(){ const cats=peppCat==='all'?Object.keys(PEPP):[peppCat]; c
 async function loadOverlayManifest(themeName){
   overlayManifest=null;
   let url;
-  if (!themeName || themeName === THEMES[0]) {
-    // “Aktivt” läser direkt från img/manifest.json (om du vill ha ett frikopplat aktivt manifest)
-    url = './img/manifest.json';
-  } else {
-    url = `./img/tema/${themeName}/manifest.json`;
-  }
+  if (!themeName || themeName === THEMES[0]) url = './img/manifest.json';
+  else url = `./img/tema/${themeName}/manifest.json`;
   try{
-    const resp=await fetch(url,{cache:'no-store'});
-    if(!resp.ok) return;
+    const resp=await fetch(url,{cache:'no-store'}); if(!resp.ok) return;
     const data=await resp.json();
-
-    // fallback för stavfel "faceal_hair"
     if (!data.facial_hair && data.faceal_hair) data.facial_hair = data.faceal_hair;
-
     overlayManifest = data;
-
-    // förladda alla bilder
     const toLoad=[];
     for (const cat of ["hats","glasses","eyes","mouth","facial_hair"]) {
       (data[cat]||[]).forEach(item=>{
@@ -310,25 +320,74 @@ function drawEffects(track,x,y,w,h){
   drawItem(e.beard, x,y,w,h);
 }
 
-/* ---------- Kamera ---------- */
-async function listCams(defaultIndex=1){ const sel=document.getElementById('camSel'); sel.innerHTML=''; const dev=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput'); dev.forEach((d,i)=>{ const o=document.createElement('option'); o.value=d.deviceId; o.textContent=d.label||`Kamera ${i+1}`; sel.appendChild(o); }); if(dev.length) sel.selectedIndex=Math.min(defaultIndex,dev.length-1); }
-async function startCamera(deviceId){ if(currentStream) currentStream.getTracks().forEach(t=>t.stop()); const constraints=deviceId?{video:{deviceId:{exact:deviceId},width:{ideal:960},height:{ideal:540}}}:{video:{width:{ideal:960},height:{ideal:540}}}; currentStream=await navigator.mediaDevices.getUserMedia(constraints); video.srcObject=currentStream; await new Promise(r=>video.onloadedmetadata=r); syncOverlaySize(); }
-
-/* ---------- Modeller ---------- */
-async function loadModels(){
-  const base='./models/';
-  await faceapi.nets.tinyFaceDetector.load(base);
-  await faceapi.nets.faceExpressionNet.load(base);
-  await faceapi.nets.ageGenderNet.load(base);
-  try { await faceapi.nets.faceLandmark68Net.load(base); LANDMARKS_AVAILABLE = true; } catch(e){ LANDMARKS_AVAILABLE = false; }
-}
-
-/* ---------- Heuristik för "äcklad" ---------- */
+/* ---------- “Äcklad”-heuristik ---------- */
 function mouthAspectRatio(landmarks){
   if(!landmarks) return 0;
   const pts=landmarks.getMouth(), d=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
   const top=pts[13], bot=pts[19], left=pts[0], right=pts[6];
   return d(top,bot)/(d(left,right)+1e-6);
+}
+
+/* ---------- Snabba CSS-filter ---------- */
+const F = { bright:1, contrast:1, sat:1, temp:0 };
+function applyCssFilters(){
+  const sep = Math.max(0, F.temp) * 0.35;    // varm åt höger
+  const hue = F.temp * 10;                   // liten hue-rotate åt båda håll
+  const chain = `brightness(${F.bright}) contrast(${F.contrast}) saturate(${F.sat}) hue-rotate(${hue}deg) sepia(${sep})`;
+  document.documentElement.style.setProperty('--vf', chain);
+}
+applyCssFilters();
+
+/* ---------- Proffsläge (ImageCapture) ---------- */
+let imageCapture=null, proCaps=null;
+async function setupProControls(stream){
+  const infoEl = document.getElementById('proInfo');
+  const wb = document.getElementById('wbTemp');
+  const ec = document.getElementById('expComp');
+  const iso = document.getElementById('iso');
+
+  // nollställ/disable
+  [wb,ec,iso].forEach(el=>{ el.disabled=true; el.value=0; });
+  infoEl.textContent = 'Söker stöd…';
+
+  try{
+    if (!('ImageCapture' in window)) throw new Error('ImageCapture saknas');
+    const track = stream.getVideoTracks()[0];
+    imageCapture = new ImageCapture(track);
+    proCaps = await imageCapture.getPhotoCapabilities();
+
+    // Vitbalans
+    if (proCaps.colorTemperature && (proCaps.whiteBalanceMode?.includes?.('manual') || proCaps.whiteBalanceMode === 'manual')) {
+      wb.min = proCaps.colorTemperature.min;
+      wb.max = proCaps.colorTemperature.max;
+      wb.step = proCaps.colorTemperature.step || 50;
+      wb.value = Math.round((+wb.min + +wb.max)/2);
+      wb.disabled = false;
+      wb.oninput = ()=> imageCapture.setOptions({ whiteBalanceMode:'manual', colorTemperature: parseInt(wb.value,10) }).catch(()=>{});
+    }
+
+    // Exponeringskompensation
+    if (proCaps.exposureCompensation) {
+      ec.min = proCaps.exposureCompensation.min;
+      ec.max = proCaps.exposureCompensation.max;
+      ec.step = proCaps.exposureCompensation.step || 0.1;
+      ec.value = 0;
+      ec.disabled = false;
+      ec.oninput = ()=> imageCapture.setOptions({ exposureMode:'manual', exposureCompensation: parseFloat(ec.value) }).catch(()=>{});
+    }
+
+    // ISO
+    if (proCaps.iso) {
+      iso.min = proCaps.iso.min; iso.max = proCaps.iso.max;
+      iso.step = proCaps.iso.step || 10; iso.value = proCaps.iso.min;
+      iso.disabled = false;
+      iso.oninput = ()=> imageCapture.setOptions({ iso: parseInt(iso.value,10) }).catch(()=>{});
+    }
+
+    infoEl.textContent = 'Aktiverat – reglage visas för det kameran stöder.';
+  } catch(e){
+    infoEl.textContent = 'Din webbläsare/kamera verkar inte stödja proffsläget. Använd filterreglagen ovan.';
+  }
 }
 
 /* ---------- Huvudloop ---------- */
@@ -424,6 +483,20 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
   document.getElementById('peppToggle').addEventListener('change', e=> { peppEnabled=e.target.checked; });
   document.getElementById('peppCat').addEventListener('change', e=> { peppCat=e.target.value; });
 
+  // Snabba filter (CSS)
+  document.getElementById('fBright').addEventListener('input', e=>{ F.bright=+e.target.value; applyCssFilters(); });
+  document.getElementById('fContrast').addEventListener('input', e=>{ F.contrast=+e.target.value; applyCssFilters(); });
+  document.getElementById('fSat').addEventListener('input', e=>{ F.sat=+e.target.value; applyCssFilters(); });
+  document.getElementById('fTemp').addEventListener('input', e=>{ F.temp=+e.target.value; applyCssFilters(); });
+  document.getElementById('fReset').addEventListener('click', ()=>{
+    F.bright=1;F.contrast=1;F.sat=1;F.temp=0;
+    document.getElementById('fBright').value=1;
+    document.getElementById('fContrast').value=1;
+    document.getElementById('fSat').value=1;
+    document.getElementById('fTemp').value=0;
+    applyCssFilters();
+  });
+
   // Theme dropdown
   const themeSel = document.getElementById('themeSel');
   THEMES.forEach(t=>{ const o=document.createElement('option'); o.value=t; o.textContent=t; themeSel.appendChild(o); });
@@ -431,7 +504,7 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
   themeSel.addEventListener('change', async e=>{
     selectedTheme = e.target.value;
     await loadOverlayManifest(selectedTheme);
-    tracks.forEach(t=>assignEffects(t)); // ge alla i bild nya effekter direkt
+    tracks.forEach(t=>assignEffects(t));
   });
 
   document.getElementById('overlayToggle').addEventListener('change', e=> { overlaysEnabled=e.target.checked; tracks.forEach(t=>assignEffects(t)); });
@@ -450,13 +523,17 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
   goalInput.addEventListener('input', e=>{ METER_GOAL_SECONDS=parseInt(e.target.value,10); goalLabel.textContent=METER_GOAL_SECONDS; });
 
   await loadModels();
-  await loadOverlayManifest(selectedTheme); // ladda starttema
+  await loadOverlayManifest(selectedTheme);
   await listCams(1);
-  document.getElementById('camSel').addEventListener('change', async e=> { await startCamera(e.target.value); });
+  document.getElementById('camSel').addEventListener('change', async e=> {
+    await startCamera(e.target.value);
+    if (currentStream) setupProControls(currentStream);
+  });
 
   document.getElementById('start').addEventListener('click', async ()=>{
     const sel=document.getElementById('camSel');
     await startCamera(sel.value);
+    if (currentStream) setupProControls(currentStream); // aktivera proffsläget om möjligt
     new ResizeObserver(()=>{ overlay.width=video.videoWidth; overlay.height=video.videoHeight; overlay.style.width=video.clientWidth+'px'; overlay.style.height=video.clientHeight+'px'; }).observe(document.getElementById('wrap'));
     requestAnimationFrame(tick);
     document.getElementById('start').disabled = true;
