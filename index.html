@@ -5,56 +5,48 @@
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Vialundskolans MoodCam (v.1.2.1)</title>
   <link rel="icon" href="data:,">
-  <style>
-    :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
-    html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,Segoe UI,Roboto,sans-serif}
-    #stage{display:grid;grid-template-columns:1fr;gap:16px;height:100vh;align-items:center;justify-items:center;padding:12px}
+<style>
+  :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,Segoe UI,Roboto,sans-serif}
+  #stage{display:grid;grid-template-columns:1fr;gap:16px;height:100vh;align-items:center;justify-items:center;padding:12px}
 
-    .topbar{position:fixed;top:10px;left:10px;display:flex;gap:8px;z-index:10}
-    .btn{background:var(--panel2);border:1px solid var(--border);color:var(--fg);padding:8px 12px;border-radius:8px;cursor:pointer}
-    .btn:disabled{opacity:.5;cursor:not-allowed}
+  .topbar{position:fixed;top:10px;left:10px;display:flex;gap:8px;z-index:10}
+  .btn{background:var(--panel2);border:1px solid var(--border);color:var(--fg);padding:8px 12px;border-radius:8px;cursor:pointer}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
 
-    .layer-wrap{position:relative;display:inline-block;border-radius:12px;overflow:hidden;box-shadow:0 12px 36px rgba(0,0,0,.5);max-width:96vw;max-height:86vh}
+  .layer-wrap{position:relative;display:inline-block;border-radius:12px;overflow:hidden;box-shadow:0 12px 36px rgba(0,0,0,.5);max-width:96vw;max-height:86vh}
 
-    /* Ordning: video (0) < canvas (1) < meter (2) */
-    video{
-      display:block;width:100%;height:auto;
-      position:relative; z-index:0;
-    }
-    canvas{
-      position:absolute; inset:0; width:100%; height:100%;
-      pointer-events:none; z-index:1;
-    }
-    #meterWrap{
-      position:absolute; left:50%; transform:translateX(-50%); bottom:0;
-      background:var(--panel); border:1px solid var(--border);
-      border-bottom-left-radius:0; border-bottom-right-radius:0;
-      border-top-left-radius:10px; border-top-right-radius:10px;
-      padding:6px 10px; width:min(360px,70%);
-      z-index:2; /* ovanför canvas/overlays/box */
-    }
+  /* Ordning: video (0) < canvas (1) < meter (2) */
+  video{ display:block;width:100%;height:auto; position:relative; z-index:0; }
+  canvas{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:1; }
+  #meterWrap{
+    position:absolute; left:50%; transform:translateX(-50%); bottom:0;
+    background:var(--panel); border:1px solid var(--border);
+    border-bottom-left-radius:0; border-bottom-right-radius:0;
+    border-top-left-radius:10px; border-top-right-radius:10px;
+    padding:6px 10px; width:min(360px,70%); z-index:2;
+  }
 
-    #meterBar{position:relative;height:8px;background:#0d1218;border-radius:6px;overflow:hidden;border:1px solid var(--border)}
-    #meterFill{height:100%;width:0%;background:linear-gradient(90deg,#2dd4bf,#22c55e)}
-    .meterVal{position:absolute;right:6px;top:-16px;opacity:.85}
-    .small{font-size:12px;opacity:.8}
+  #meterBar{position:relative;height:8px;background:#0d1218;border-radius:6px;overflow:hidden;border:1px solid var(--border)}
+  #meterFill{height:100%;width:0%;background:linear-gradient(90deg,#2dd4bf,#22c55e)}
+  .meterVal{position:absolute;right:6px;top:-16px;opacity:.85}
+  .small{font-size:12px;opacity:.8}
 
-    #settings{display:none;position:fixed;right:12px;top:52px;width:360px;max-height:85vh;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px 12px 8px;z-index:20}
-    #settings h3{margin:6px 0 8px 0;font-size:16px}
-    #settings .row{display:flex;justify-content:space-between;align-items:center;margin:8px 0}
-    #settings label{font-size:14px}
+  #settings{display:none;position:fixed;right:12px;top:52px;width:360px;max-height:85vh;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px 12px 8px;z-index:20}
+  #settings h3{margin:6px 0 8px 0;font-size:16px}
+  #settings .row{display:flex;justify-content:space-between;align-items:center;margin:8px 0}
+  #settings label{font-size:14px}
 
-    details{border:1px dashed var(--border);border-radius:8px;padding:6px;margin-top:8px}
-    summary{cursor:pointer}
-    .desc{font-size:12px;opacity:.75;margin:4px 0 0}
-    input[type="range"]{width:190px}
-    .two-col{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center}
-    .hud{position:fixed;left:14px;bottom:14px;font-size:12px;opacity:.7}
-  </style>
-
+  details{border:1px dashed var(--border);border-radius:8px;padding:6px;margin-top:8px}
+  summary{cursor:pointer}
+  .desc{font-size:12px;opacity:.75;margin:4px 0 0}
+  input[type="range"]{width:190px}
+  .two-col{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center}
+  .hud{position:fixed;left:14px;bottom:14px;font-size:12px;opacity:.7}
+</style>
   <!-- Cache-bust -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.21.0/dist/tf.min.js?v=mc1"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js?v=mc1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.21.0/dist/tf.min.js?v=mc2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js?v=mc2"></script>
 </head>
 <body>
   <div class="topbar">
@@ -312,6 +304,7 @@ function isValidPose(p, box){
   const ok = v => Number.isFinite(v);
   if (!ok(p.eyeCx)||!ok(p.eyeCy)||!ok(p.eyeD)) return false;
 
+  // Relativa pos inom ansiktsrutan
   const ex = p.eyeCx - x;
   const ey = p.eyeCy - y;
 
@@ -321,6 +314,7 @@ function isValidPose(p, box){
 
   if (ok(p.mouthW) && !(p.mouthW > minEyeD*0.6 && p.mouthW < w*1.2)) return false;
 
+  // Tillåt liten marginal utanför bbox
   if (!(ex >= -w*0.2 && ex <= w*1.2 && ey >= -h*0.2 && ey <= h*1.2)) return false;
 
   return true;
@@ -347,7 +341,7 @@ function randomPepp(){
   return pool[Math.floor(Math.random()*pool.length)];
 }
 
-/* -------- Bara landmarks: ingen bbox-fallback -------- */
+/* --------- Landmark-only rendering --------- */
 function drawItem(meta, track, x,y,w,h){
   if(!meta) return;
   const path = `./img/${meta.file}`;
@@ -359,13 +353,14 @@ function drawItem(meta, track, x,y,w,h){
   const flipX = !!cfg.flipX;
   const rotWithEyes = (cfg.rot !== false);
 
-  // Endast pose-läge; kan tvingas per asset med forcePose:true i meta.json
-  const usePoseNow = ((track.usePose || cfg.forcePose) && fit !== 'bbox');
-  if (!usePoseNow) return; // <-- ingen ritning utan giltig pose
+  // Landmark-only: rita endast om pose är aktiv och giltig
+  if (!track.usePose) return;
 
   const p = track.pose;
   const eyeC = {x:p.eyeCx, y:p.eyeCy};
   const eyeD = p.eyeD;
+  if (!Number.isFinite(eyeC.x) || !Number.isFinite(eyeC.y) || !Number.isFinite(eyeD)) return;
+
   const angle= p.angle || 0;
   const mouthC = (p.mouthCx!=null && p.mouthCy!=null) ? {x:p.mouthCx, y:p.mouthCy} : {x:eyeC.x, y:eyeC.y + eyeD*0.6};
   const mouthW = p.mouthW || eyeD*0.9;
@@ -376,7 +371,7 @@ function drawItem(meta, track, x,y,w,h){
   else if (fit==='mouth'){ cx=mouthC.x; cy=mouthC.y; refW=mouthW; defWF=1.3; }
   else if (fit==='beard'){ cx=mouthC.x; cy=mouthC.y + eyeD*0.55; refW=faceW; defWF=0.9; defY=0.05; }
   else if (fit==='hat'){ cx=eyeC.x; cy=eyeC.y - eyeD*0.9; refW=faceW; defWF=1.1; defY=-0.15; }
-  else return; // okänd fit => rita inte
+  else { return; } // okänd fit -> rita inte (ingen bbox-fallback)
 
   const wf = (cfg.wFactor ?? defWF);
   const drawW = refW * wf;
@@ -398,7 +393,6 @@ function drawItem(meta, track, x,y,w,h){
   }
   ctx.restore();
 }
-
 function drawEffects(track,x,y,w,h){
   if(!overlaysEnabled || !track.effects) return;
   const e=track.effects;
@@ -489,8 +483,7 @@ async function tick(){
     const options = new faceapi.TinyFaceDetectorOptions({ inputSize: DETECTOR_SIZE, scoreThreshold: 0.6 });
 
     let builder = faceapi.detectAllFaces(video, options);
-    const typeBefore = typeof builder.withFaceLandmarks;
-    if (LANDMARKS_AVAILABLE && typeBefore === 'function') builder = builder.withFaceLandmarks();
+    if (LANDMARKS_AVAILABLE && typeof builder.withFaceLandmarks === 'function') builder = builder.withFaceLandmarks();
     builder = builder.withFaceExpressions().withAgeAndGender();
 
     const dets = await builder;
@@ -524,7 +517,7 @@ async function tick(){
       const exp=det.expressions||{}; let emo=null, conf=0; for(const [k,v] of Object.entries(exp)) if(v>conf){ emo=k; conf=v; }
       const shownAge = getSmoothedAge(tr, now, det.age ?? null);
 
-      // pose
+      // pose (landmarks)
       if (det.landmarks){
         const lm = det.landmarks;
         const mean = pts => { const n=pts.length; const s=pts.reduce((a,p)=>({x:a.x+p.x,y:a.y+p.y}),{x:0,y:0}); return {x:s.x/n,y:s.y/n}; };
@@ -556,45 +549,33 @@ async function tick(){
         if (faceW!=null)  pz.faceW  = ema(pz.faceW,  faceW,  POSE_ALPHA);
       }
 
-      // Sticky/hysteresis för pose-läge
+      // Landmark-only gate (hysteresis kvar för stabilitet)
       {
         const validNow = !!det.landmarks && isValidPose(tr.pose, {x:b.x, y:b.y, width:b.width, height:b.height});
         if (validNow) { tr.poseValid++; tr.poseInvalid=0; if(!tr.usePose && tr.poseValid>=2) tr.usePose=true; }
         else { tr.poseInvalid++; tr.poseValid=0; if(tr.usePose && tr.poseInvalid>=6) tr.usePose=false; }
       }
 
-      // ”Äcklad”-boost
-      if (det.landmarks) {
-        const mar=mouthAspectRatio(det.landmarks), happy=exp.happy||0, neutral=exp.neutral||0;
-        if(mar>0.42 && happy<0.4 && neutral<0.6){ if((exp.disgusted||0)<0.6) exp.disgusted=0.6; if(exp.disgusted>=conf){ emo='disgusted'; conf=exp.disgusted; } }
-      }
-
-      // logg
-      tr.seenFrames++; if(!tr.counted && tr.seenFrames===30){ const key=todayKey(); visitorsByDay[key]=(visitorsByDay[key]||0)+1; localStorage.setItem('moodcam.visitors', JSON.stringify(visitorsByDay)); updateLogInfo(); tr.counted=true; }
-
-      // mood-ackumulator
-      if (emo==='happy' && conf>=EMO_CONF_MIN){
-        tr.warm += dt;
-        if(!tr.contributing && tr.warm>=HAPPY_WARMUP_SECONDS) tr.contributing=true;
-        if(tr.contributing){ const wgt = CONTRIB_WEIGHT_BY_CONF ? Math.max(0.5, conf) : 1; HAPPY_PERSON_SECONDS += dt * wgt; }
-      } else { tr.warm=0; tr.contributing=false; }
-
-      // ---------- RITORDNING ----------
-      // 1) Overlays (bakom)
       const [x,y,w,h]=tr.bbox;
+      const color=EMO_COLOR[emo]||'#24ff78';
+
+      /* --- RITA I RÄTT ORDNING --- */
+      // 1) overlays (bakom)
       drawEffects(tr, x,y,w,h);
 
-      // 2) Face box + etikett (ovanför overlays)
-      const color=EMO_COLOR[emo]||'#24ff78';
+      // 2) face box + etikett (framför)
       ctx.strokeStyle=color; ctx.lineWidth=UI.faceBoxWidth; ctx.strokeRect(x,y,w,h);
-      if(emo && conf>=EMO_CONF_MIN){ const label=`${EMO_SV[emo]||emo} · ${Math.round(conf*100)}%` + (shownAge?` · ${shownAge} år`:''); drawLabel(x,y,label); }
-      else if(shownAge){ drawLabel(x,y,`${shownAge} år`); }
+      if(emo && conf>=EMO_CONF_MIN){
+        const label=`${EMO_SV[emo]||emo} · ${Math.round(conf*100)}%` + (shownAge?` · ${shownAge} år`:'');
+        drawLabel(x,y,label);
+      } else if(shownAge){ drawLabel(x,y,`${shownAge} år`); }
 
-      // 3) Emoji + pepp (ovanpå boxen)
+      // 3) emoji (främst)
       const emoji=EMO_EMOJI[emo]||"🙂"; const emSize=Math.max(28, Math.round(Math.min(w,h)*0.22));
       ctx.font=`${emSize}px serif`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(emoji, x+w, y);
       ctx.textAlign='left'; ctx.textBaseline='alphabetic';
 
+      // 4) pepp (ovanpå allt, men inom rutan)
       if (peppEnabled){ if(!tr.peppText) tr.peppText = randomPepp(); drawCenteredBottom(x,y,w,h,tr.peppText); }
     }
 
