@@ -1,9 +1,17 @@
 {
-  "assets/eyes/eyes1.png": {
-    "fit": "eyes",
-    "wFactor": 2.1,
-    "yOffset": -0.2,
-    "xOffset": 0.00,
-    "rot": true
-  }
+  "assets/eyes/eyes1.png": { "fit": "eyes", "wFactor": 2.10, "yOffset": -0.20, "xOffset": 0.00, "rot": true },
+  "assets/eyes/eyes2.png": { "fit": "eyes", "wFactor": 2.00, "yOffset": -0.18, "xOffset": 0.00, "rot": true },
+  "assets/eyes/eyes3.png": { "fit": "eyes", "wFactor": 2.30, "yOffset": -0.10, "xOffset": 0.00, "rot": true },
+  "assets/eyes/eyes4.png": { "fit": "eyes", "wFactor": 2.00, "yOffset": -0.15, "xOffset": 0.00, "rot": true },
+  "assets/eyes/eyes5.png": { "fit": "eyes", "wFactor": 2.40, "yOffset": -0.08, "xOffset": 0.00, "rot": true },
+  "assets/eyes/eyes6.png": { "fit": "eyes", "wFactor": 1.85, "yOffset": -0.10, "xOffset": 0.00, "rot": true },
+  "assets/eyes/eyes7.png": { "fit": "eyes", "wFactor": 2.20, "yOffset": -0.12, "xOffset": 0.00, "rot": true },
+
+  "assets/glasses/glasses1.png": { "fit": "glasses", "wFactor": 2.00, "yOffset": 0.05, "xOffset": 0.00, "rot": true },
+  "assets/glasses/glasses2.png": { "fit": "glasses", "wFactor": 2.05, "yOffset": 0.05, "xOffset": 0.00, "rot": true },
+  "assets/glasses/glasses3.png": { "fit": "glasses", "wFactor": 2.00, "yOffset": 0.05, "xOffset": 0.00, "rot": true },
+  "assets/glasses/glasses4.png": { "fit": "glasses", "wFactor": 2.10, "yOffset": 0.06, "xOffset": 0.00, "rot": true },
+  "assets/glasses/glasses5.png": { "fit": "glasses", "wFactor": 1.95, "yOffset": 0.05, "xOffset": 0.00, "rot": true },
+  "assets/glasses/glasses6.png": { "fit": "glasses", "wFactor": 2.15, "yOffset": 0.06, "xOffset": 0.00, "rot": true },
+  "assets/glasses/glasses7.png": { "fit": "glasses", "wFactor": 1.90, "yOffset": 0.04, "xOffset": 0.00, "rot": true }
 }
