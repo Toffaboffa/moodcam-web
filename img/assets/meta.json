@@ -24,14 +24,14 @@
   "assets/mouth/mouth7.png": { "fit": "mouth", "wFactor": 1.30, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
   "assets/mouth/mouth8.png": { "fit": "mouth", "wFactor": 1.30, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
 
-  "assets/hats/basker.png":    { "fit": "hat", "wFactor": 1.50, "yOffset": -0.15, "xOffset": -0.05, "rot": true },
-  "assets/hats/cowboy.png":    { "fit": "hat", "wFactor": 1.9, "yOffset": -0.25, "xOffset": 0.00,  "rot": true },
+  "assets/hats/basker.png":    { "fit": "hat", "wFactor": 1.50, "yOffset": -0.15, "xOffset": 0.08, "rot": true },
+  "assets/hats/cowboy.png":    { "fit": "hat", "wFactor": 1.9, "yOffset": -0.20, "xOffset": 0.00,  "rot": true },
   "assets/hats/hat1.png":      { "fit": "hat", "wFactor": 1.1, "yOffset": -0.20, "xOffset": 0.00,  "rot": true },
   "assets/hats/mössa.png":     { "fit": "hat", "wFactor": 1.3, "yOffset": -0.20, "xOffset": 0.00,  "rot": true },
   "assets/hats/pirat.png":     { "fit": "hat", "wFactor": 2.0, "yOffset": 0.12, "xOffset": 0.00,  "rot": true },
   "assets/hats/rishatt.png":   { "fit": "hat", "wFactor": 2.0, "yOffset": -0.09, "xOffset": 0.00,  "rot": true },
-  "assets/hats/sommar.png":    { "fit": "hat", "wFactor": 2.2, "yOffset": 0.00, "xOffset": -0.04,  "rot": true },
-  "assets/hats/tomteluva.png": { "fit": "hat", "wFactor": 2.1, "yOffset": -0.05, "xOffset": -0.1,  "rot": true },
+  "assets/hats/sommar.png":    { "fit": "hat", "wFactor": 2.2, "yOffset": 0.08, "xOffset": -0.04,  "rot": true },
+  "assets/hats/tomteluva.png": { "fit": "hat", "wFactor": 2.1, "yOffset": -0.05, "xOffset": 0.2,  "rot": true },
 
   "assets/facial_hair/beard1.png": { "fit": "beard", "wFactor": 1.00, "yOffset": -1.10, "xOffset": 0.00, "rot": true },
   "assets/facial_hair/musta1.png": { "fit": "mouth", "wFactor": 0.60, "yOffset": -2.50, "xOffset": 0.00, "rot": true },
