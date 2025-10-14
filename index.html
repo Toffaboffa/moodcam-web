@@ -4,7 +4,6 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Vialundskolans MoodCam (v.1.2.1)</title>
-  <!-- Slipp favicon 404 -->
   <link rel="icon" href="data:,">
   <style>
     :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
@@ -33,7 +32,7 @@
     .hud{position:fixed;left:14px;bottom:14px;font-size:12px;opacity:.7}
   </style>
 
-  <!-- Cache-bust med ?v=mc1 så vi säkert laddar ny kod -->
+  <!-- Cache-bust -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.21.0/dist/tf.min.js?v=mc1"></script>
   <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js?v=mc1"></script>
 </head>
@@ -145,16 +144,11 @@
   <div class="hud">Allt körs lokalt i datorn. /Kristoffer</div>
 
 <script>
-/* ---------- Konsolfilter (tysta biblioteksspam) ---------- */
+/* ---------- Konsolfilter ---------- */
 const ORIG_CONSOLE = { info: console.info, warn: console.warn, log: console.log };
-const NOISE_PATTERNS = [
-  /already been set/i,
-  /backend was already registered/i,
-  /kernel .* already registered/i
-];
-console.warn = (...args)=>{ const s=(args||[]).join(' '); if (NOISE_PATTERNS.some(r=>r.test(s))) return; ORIG_CONSOLE.warn.apply(console,args); };
-console.info = (...args)=>{ const s=(args||[]).join(' '); if (NOISE_PATTERNS.some(r=>r.test(s))) return; ORIG_CONSOLE.info.apply(console,args); };
-// Lämna console.error orörd.
+const NOISE_PATTERNS = [/already been set/i,/backend was already registered/i,/kernel .* already registered/i];
+console.warn = (...a)=>{ const s=(a||[]).join(' '); if (NOISE_PATTERNS.some(r=>r.test(s))) return; ORIG_CONSOLE.warn.apply(console,a); };
+console.info = (...a)=>{ const s=(a||[]).join(' '); if (NOISE_PATTERNS.some(r=>r.test(s))) return; ORIG_CONSOLE.info.apply(console,a); };
 
 const DEBUG = false;
 
@@ -291,16 +285,26 @@ function assignEffects(track){
   track.effects = e;
 }
 
-/* ---- Pose sanity ---- */
-function isValidPose(p, w, h){
-  if (!p) return false;
+/* ---- Pose sanity (bbox-medveten) ---- */
+function isValidPose(p, box){
+  if (!p || !box) return false;
+  const {x, y, width: w, height: h} = box;
   const ok = v => Number.isFinite(v);
   if (!ok(p.eyeCx)||!ok(p.eyeCy)||!ok(p.eyeD)) return false;
+
+  // Relativa pos inom ansiktsrutan
+  const ex = p.eyeCx - x;
+  const ey = p.eyeCy - y;
+
   const minEyeD = Math.max(6, Math.min(w,h)*0.06);
   const maxEyeD = Math.min(w*0.9, Math.min(w,h)*0.8);
   if (!(p.eyeD > minEyeD && p.eyeD < maxEyeD)) return false;
+
   if (ok(p.mouthW) && !(p.mouthW > minEyeD*0.6 && p.mouthW < w*1.2)) return false;
-  if (!(p.eyeCx >= -w*0.2 && p.eyeCx <= w*1.2 && p.eyeCy <= h*1.2)) return false;
+
+  // Tillåt liten marginal utanför bbox
+  if (!(ex >= -w*0.2 && ex <= w*1.2 && ey >= -h*0.2 && ey <= h*1.2)) return false;
+
   return true;
 }
 function defaultFitForFile(path){
@@ -312,12 +316,9 @@ function defaultFitForFile(path){
   return 'bbox';
 }
 
-/* ---------- Pepp: enkla fraser ---------- */
+/* ---------- Pepp ---------- */
 const PEPP = {
-  all: [
-    "Du fixar det här! 💪","Snyggt fokus!","En sak i taget.","Andas in, andas ut 😊",
-    "Testa igen – nu sitter den!","Bra energi!"
-  ],
+  all: ["Du fixar det här! 💪","Snyggt fokus!","En sak i taget.","Andas in, andas ut 😊","Testa igen – nu sitter den!","Bra energi!"],
   skola: ["Kunskap = superkraft","Skriv lite till ✍️","Du lär dig nu!"],
   maende: ["Ta en mikropaus 💧","Sträck på dig!","Ditt bästa räcker."],
   basta: ["Gör ditt bästa – det räcker","Små steg ➜ stora resultat"],
@@ -339,9 +340,9 @@ function drawItem(meta, track, x,y,w,h){
   const flipX = !!cfg.flipX;
   const rotWithEyes = (cfg.rot !== false);
 
-  const usePose = track.usePose && fit !== 'bbox';
+  const usePoseNow = track.usePose && fit !== 'bbox';
 
-  if (usePose){
+  if (usePoseNow){
     const p = track.pose;
     const eyeC = {x:p.eyeCx, y:p.eyeCy};
     const eyeD = p.eyeD;
@@ -365,12 +366,12 @@ function drawItem(meta, track, x,y,w,h){
 
     ctx.save();
     if (rotWithEyes){
-      ctx.translate(eyeC.x + dx, eyeC.y + dy);
+      ctx.translate(cx + dx, cy + dy);
       if (flipX) ctx.scale(-1,1);
       ctx.rotate(angle);
       ctx.drawImage(img, -drawW/2, -drawH/2, drawW, drawH);
     } else {
-      const px = eyeC.x + dx - drawW/2, py = eyeC.y + dy - drawH/2;
+      const px = cx + dx - drawW/2, py = cy + dy - drawH/2;
       if (flipX){ ctx.translate(px+drawW/2, py+drawH/2); ctx.scale(-1,1); ctx.drawImage(img,-drawW/2,-drawH/2,drawW,drawH); }
       else ctx.drawImage(img, px, py, drawW, drawH);
     }
@@ -496,7 +497,6 @@ async function tick(){
     builder = builder.withFaceExpressions().withAgeAndGender();
 
     const dets = await builder;
-    // (debugrad borttagen)
 
     ctx.clearRect(0,0,overlay.width,overlay.height);
 
@@ -559,14 +559,14 @@ async function tick(){
         if (faceW!=null)  pz.faceW  = ema(pz.faceW,  faceW,  POSE_ALPHA);
       }
 
-      // sticky/hysteresis för pose-läge
+      // Sticky/hysteresis för pose-läge (NU: bbox-medveten validering)
       {
-        const validNow = !!det.landmarks && isValidPose(tr.pose, b.width, b.height);
+        const validNow = !!det.landmarks && isValidPose(tr.pose, {x:b.x, y:b.y, width:b.width, height:b.height});
         if (validNow) { tr.poseValid++; tr.poseInvalid=0; if(!tr.usePose && tr.poseValid>=2) tr.usePose=true; }
         else { tr.poseInvalid++; tr.poseValid=0; if(tr.usePose && tr.poseInvalid>=6) tr.usePose=false; }
       }
 
-      // äcklad boost
+      // ”Äcklad”-boost
       if (det.landmarks) {
         const mar=mouthAspectRatio(det.landmarks), happy=exp.happy||0, neutral=exp.neutral||0;
         if(mar>0.42 && happy<0.4 && neutral<0.6){ if((exp.disgusted||0)<0.6) exp.disgusted=0.6; if(exp.disgusted>=conf){ emo='disgusted'; conf=exp.disgusted; } }
@@ -670,12 +670,10 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
   METER_GOAL_SECONDS=parseInt(goalInput.value,10); goalLabel.textContent=METER_GOAL_SECONDS;
   goalInput.addEventListener('input', e=>{ METER_GOAL_SECONDS=parseInt(e.target.value,10); goalLabel.textContent=METER_GOAL_SECONDS; });
 
-  // Kicka igång laddningar (tyst): meta ja, manifest bara om overlays är på
   await loadAssetMeta();
   listCams(1);
-  ensureModelsLoading(); // i bakgrunden
+  ensureModelsLoading();
 
-  // Start-knapp
   document.getElementById('start').addEventListener('click', async ()=>{
     const modelsOK = await ensureModelsLoading(); if (!modelsOK) return;
     const sel=document.getElementById('camSel');
@@ -687,7 +685,6 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
     document.getElementById('start').disabled = true;
   });
 
-  // Global fel-logg (behåll)
   window.addEventListener('error', (e)=> console.error('[MoodCam] window error:', e.error||e.message));
 })();
 </script>
