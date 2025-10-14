@@ -1,0 +1,14 @@
+{
+  "assets/eyes/eyes1.png": {
+    "fit": "eyes",
+    "wFactor": 2.35,
+    "yOffset": 0.12,
+    "xOffset": 0.00,
+    "rot": true
+  },
+  "assets/glasses/glasses3.png": {
+    "fit": "glasses",
+    "wFactor": 2.0,
+    "yOffset": 0.05
+  }
+}
