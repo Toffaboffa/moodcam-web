@@ -15,6 +15,9 @@
   .btn:disabled{opacity:.5;cursor:not-allowed}
 
   .layer-wrap{position:relative;display:inline-block;border-radius:12px;overflow:hidden;box-shadow:0 12px 36px rgba(0,0,0,.5);max-width:96vw;max-height:86vh}
+  /* Spegelvändning (video + canvas) */
+  .layer-wrap.mirror video,
+  .layer-wrap.mirror canvas { transform: scaleX(-1); }
 
   /* Ordning: video (0) < canvas (1) < meter (2) */
   video{ display:block;width:100%;height:auto; position:relative; z-index:0; }
@@ -129,6 +132,7 @@
         <label for="fSaturate">Mättnad</label><input id="fSaturate"    type="range" min="0"  max="200" step="1" value="100">
         <label for="fHue">Ton (°)</label><input id="fHue"              type="range" min="-180" max="180" step="1" value="0">
         <label for="fTemp">Temperatur</label><input id="fTemp"         type="range" min="-50" max="50" step="1" value="0">
+        <label for="mirrorX">Spegelvänd bild</label><input id="mirrorX" type="checkbox">
       </div>
       <div class="row"><button id="filtersReset" class="btn">Återställ</button></div>
       <p class="desc">Påverkar bara visningen (inte detekteringen).</p>
@@ -289,11 +293,24 @@ function choiceWeighted(arr){
 function assignEffects(track){
   if(!overlaysEnabled || !overlayManifest){ track.effects=null; return; }
   const e={};
-  if (overlayUse.hats)    e.hat   = choiceWeighted(overlayManifest.hats) || null;
-  if (overlayUse.glasses) e.glass = choiceWeighted(overlayManifest.glasses) || null;
-  if (overlayUse.eyes)    e.eyes  = choiceWeighted(overlayManifest.eyes) || null;
-  if (overlayUse.mouth)   e.mouth = choiceWeighted(overlayManifest.mouth) || null;
-  if (overlayUse.beard)   e.beard = choiceWeighted(overlayManifest.facial_hair) || null;
+
+  // Hatt (om aktiverat)
+  if (overlayUse.hats) e.hat = choiceWeighted(overlayManifest.hats) || null;
+
+  // Exklusivt val mellan ögon och glasögon om båda är aktiva
+  if (overlayUse.eyes && overlayUse.glasses) {
+    const pickEyes = Math.random() < 0.5;
+    if (pickEyes) e.eyes = choiceWeighted(overlayManifest.eyes) || null;
+    else          e.glass = choiceWeighted(overlayManifest.glasses) || null;
+  } else {
+    if (overlayUse.eyes)    e.eyes  = choiceWeighted(overlayManifest.eyes) || null;
+    if (overlayUse.glasses) e.glass = choiceWeighted(overlayManifest.glasses) || null;
+  }
+
+  // Mun & skägg som vanligt
+  if (overlayUse.mouth) e.mouth = choiceWeighted(overlayManifest.mouth) || null;
+  if (overlayUse.beard) e.beard = choiceWeighted(overlayManifest.facial_hair) || null;
+
   track.effects = e;
 }
 
@@ -396,11 +413,19 @@ function drawItem(meta, track, x,y,w,h){
 function drawEffects(track,x,y,w,h){
   if(!overlaysEnabled || !track.effects) return;
   const e=track.effects;
-  drawItem(e.hat,   track, x,y,w,h);
-  drawItem(e.glass, track, x,y,w,h);
-  drawItem(e.eyes,  track, x,y,w,h);
-  drawItem(e.mouth, track, x,y,w,h);
-  drawItem(e.beard, track, x,y,w,h);
+
+  // Ögon/glasögon (den som finns)
+  if (e.eyes)  drawItem(e.eyes,  track, x,y,w,h);
+  if (e.glass) drawItem(e.glass, track, x,y,w,h);
+
+  // Mun (bakom facial hair)
+  if (e.mouth) drawItem(e.mouth, track, x,y,w,h);
+
+  // Facial hair ovanpå mun
+  if (e.beard) drawItem(e.beard, track, x,y,w,h);
+
+  // Hatt högst upp
+  if (e.hat)   drawItem(e.hat,   track, x,y,w,h);
 }
 
 /* ---------- Kamera ---------- */
@@ -601,6 +626,7 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
 (async function init(){
   console.info('[MoodCam] Init… TFJS:', (tf && tf.version_core)||'n/a', 'face-api:', (faceapi && faceapi.version)||'n/a');
 
+  const wrap=document.getElementById('wrap');
   video=document.getElementById('video'); overlay=document.getElementById('overlay'); ctx=overlay.getContext('2d');
 
   // UI handlers
@@ -622,6 +648,12 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
     const evt=new Event('input'); fBrightness.dispatchEvent(evt);
   });
   fBrightness.dispatchEvent(new Event('input'));
+
+  // Spegelvänd toggle
+  document.getElementById('mirrorX').addEventListener('change', e=>{
+    if (e.target.checked) wrap.classList.add('mirror');
+    else wrap.classList.remove('mirror');
+  });
 
   const themeSel = document.getElementById('themeSel');
   THEMES.forEach(t=>{ const o=document.createElement('option'); o.value=t; o.textContent=t; themeSel.appendChild(o); });
