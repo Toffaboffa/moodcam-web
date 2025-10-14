@@ -11,7 +11,7 @@
   "assets/glasses/glasses2.png": { "fit": "glasses", "wFactor": 2.2, "yOffset": 0.05, "xOffset": 0.00, "rot": true },
   "assets/glasses/glasses3.png": { "fit": "glasses", "wFactor": 2.10, "yOffset": 0.05, "xOffset": 0.00, "rot": true },
   "assets/glasses/glasses4.png": { "fit": "glasses", "wFactor": 2.10, "yOffset": 0.1, "xOffset": 0.00, "rot": true },
-  "assets/glasses/glasses5.png": { "fit": "glasses", "wFactor": 2.3, "yOffset": -0.05, "xOffset": 0.00, "rot": true },
+  "assets/glasses/glasses5.png": { "fit": "glasses", "wFactor": 2.3, "yOffset": 0.1, "xOffset": 0.00, "rot": true },
   "assets/glasses/glasses6.png": { "fit": "glasses", "wFactor": 2.15, "yOffset": 0.06, "xOffset": 0.00, "rot": true },
   "assets/glasses/glasses7.png": { "fit": "glasses", "wFactor": 1.90, "yOffset": 0.04, "xOffset": 0.00, "rot": true },
 
