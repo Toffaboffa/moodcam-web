@@ -38,9 +38,9 @@
   /* Skägg & mustasch:
      - beard1: skala mot ansiktsbredd (fit: "beard")
      - musta*: skala mot munbredd och placera strax ovan (fit: "mouth") */
-  "assets/facial_hair/beard1.png": { "fit": "beard", "wFactor": 1.00, "yOffset": 0.10, "xOffset": 0.00, "rot": true },
+  "assets/facial_hair/beard1.png": { "fit": "beard", "wFactor": 1.00, "yOffset": -1.10, "xOffset": 0.00, "rot": true },
 
-  "assets/facial_hair/musta1.png": { "fit": "mouth", "wFactor": 0.80, "yOffset": -1.20, "xOffset": 0.00, "rot": true },
-  "assets/facial_hair/musta2.png": { "fit": "mouth", "wFactor": 1.10, "yOffset": -0.20, "xOffset": 0.00, "rot": true },
-  "assets/facial_hair/musta3.png": { "fit": "mouth", "wFactor": 1.10, "yOffset": -0.20, "xOffset": 0.00, "rot": true }
+  "assets/facial_hair/musta1.png": { "fit": "mouth", "wFactor": 0.60, "yOffset": -1.50, "xOffset": 0.00, "rot": true },
+  "assets/facial_hair/musta2.png": { "fit": "mouth", "wFactor": 1.10, "yOffset": -1.20, "xOffset": 0.00, "rot": true },
+  "assets/facial_hair/musta3.png": { "fit": "mouth", "wFactor": 1.10, "yOffset": -1.20, "xOffset": 0.00, "rot": true }
 }
