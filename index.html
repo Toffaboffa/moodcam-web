@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Vialundskolans MoodCam (v.1.2.0)</title>
+  <title>Vialundskolans MoodCam (v.1.2.1)</title>
   <style>
     :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
     html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,Segoe UI,Roboto,sans-serif}
@@ -307,6 +307,19 @@ function assignEffects(track){
   track.effects = e;
 }
 
+/* ---- Pose sanity ---- */
+function isValidPose(p, w, h){
+  if (!p) return false;
+  const ok = v => Number.isFinite(v);
+  if (!ok(p.eyeCx)||!ok(p.eyeCy)||!ok(p.eyeD)) return false;
+  const minEyeD = Math.max(6, Math.min(w,h)*0.06);
+  const maxEyeD = Math.min(w*0.9, Math.min(w,h)*0.8);
+  if (!(p.eyeD > minEyeD && p.eyeD < maxEyeD)) return false;
+  if (ok(p.mouthW) && !(p.mouthW > minEyeD*0.6 && p.mouthW < w*1.2)) return false;
+  if (!(p.eyeCx >= -w*0.2 && p.eyeCx <= w*1.2 && p.eyeCy >= -h*0.2 && p.eyeCy <= h*1.2)) return false;
+  return true;
+}
+
 /* ---- Ritning med per-bild-meta + utjämnad pose ---- */
 function defaultFitForFile(path){
   if (path.startsWith('assets/glasses/'))     return 'glasses';
@@ -322,19 +335,18 @@ function drawItem(meta, track, x,y,w,h){
   const path = `./img/${meta.file}`;
   const img = imgCache.get(path); if(!img) return;
 
-  // slå ihop per-bild-meta (global) över tema-item
   const mAsset = assetMeta[meta.file] || {};
   const cfg = { ...meta, ...mAsset };
   const fit = (cfg.fit || defaultFitForFile(cfg.file));
   const flipX = !!cfg.flipX;
   const rotWithEyes = (cfg.rot !== false);
 
-  const hasPose = !!track.pose;
+  const usePose = isValidPose(track.pose, w, h) && fit !== 'bbox';
 
-  if (hasPose && fit !== 'bbox'){
+  if (usePose){
     const p = track.pose;
     const eyeC = {x:p.eyeCx, y:p.eyeCy};
-    const eyeD = p.eyeD || (w*0.35);
+    const eyeD = p.eyeD;
     const angle= p.angle || 0;
     const mouthC = (p.mouthCx!=null && p.mouthCy!=null) ? {x:p.mouthCx, y:p.mouthCy} : {x:eyeC.x, y:eyeC.y + eyeD*0.6};
     const mouthW = p.mouthW || eyeD*0.9;
@@ -370,7 +382,7 @@ function drawItem(meta, track, x,y,w,h){
     return;
   }
 
-  // fallback: bbox
+  // Fallback: bbox (stabil)
   const def = (()=> {
     if(cfg.file.startsWith('assets/hats/'))        return {dx:0.10, dy:-0.35, scale:0.80};
     if(cfg.file.startsWith('assets/glasses/'))     return {dx:0.20, dy:0.28, scale:0.60};
