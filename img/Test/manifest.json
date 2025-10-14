@@ -1,0 +1,6 @@
+{
+  "meta": { "name": "Test" },
+  "eyes": [
+    { "file": "assets/eyes/eyes1.png", "anchor": "eyes", "dx": 0.18, "dy": 0.22, "scale": 0.64 }
+  ]
+}
