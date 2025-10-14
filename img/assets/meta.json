@@ -31,8 +31,8 @@
   "assets/hats/hat1.png":      { "fit": "hat", "wFactor": 1.20, "yOffset": -0.22, "xOffset": 0.00,  "rot": true },
   "assets/hats/mössa.png":     { "fit": "hat", "wFactor": 1.15, "yOffset": -0.30, "xOffset": 0.00,  "rot": true },
   "assets/hats/pirat.png":     { "fit": "hat", "wFactor": 1.25, "yOffset": -0.22, "xOffset": 0.00,  "rot": true },
-  "assets/hats/rishatt.png":   { "fit": "hat", "wFactor": 1.60, "yOffset": -0.40, "xOffset": 0.00,  "rot": true },
-  "assets/hats/sommar.png":    { "fit": "hat", "wFactor": 3.35, "yOffset": -0.28, "xOffset": 0.00,  "rot": true },
+  "assets/hats/rishatt.png":   { "fit": "hat", "wFactor": 2.0, "yOffset": -0.40, "xOffset": 0.00,  "rot": true },
+  "assets/hats/sommar.png":    { "fit": "hat", "wFactor": 5, "yOffset": 0.0, "xOffset": 0.00,  "rot": true },
   "assets/hats/tomteluva.png": { "fit": "hat", "wFactor": 1.20, "yOffset": -0.25, "xOffset": 0.05,  "rot": true },
 
   /* Skägg & mustasch:
