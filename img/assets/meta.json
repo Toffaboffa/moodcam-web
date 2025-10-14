@@ -24,9 +24,9 @@
   "assets/mouth/mouth7.png": { "fit": "mouth", "wFactor": 1.30, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
   "assets/mouth/mouth8.png": { "fit": "mouth", "wFactor": 1.30, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
 
-  "assets/hats/basker.png":    { "fit": "hat", "wFactor": 1.80, "yOffset": -0.15, "xOffset": -0.05, "rot": true },
+  "assets/hats/basker.png":    { "fit": "hat", "wFactor": 1.40, "yOffset": -0.15, "xOffset": -0.05, "rot": true },
   "assets/hats/cowboy.png":    { "fit": "hat", "wFactor": 1.9, "yOffset": -0.25, "xOffset": 0.00,  "rot": true },
-  "assets/hats/hat1.png":      { "fit": "hat", "wFactor": 2.1, "yOffset": -0.22, "xOffset": 0.00,  "rot": true },
+  "assets/hats/hat1.png":      { "fit": "hat", "wFactor": 2.1, "yOffset": -1.22, "xOffset": 0.00,  "rot": true },
   "assets/hats/mössa.png":     { "fit": "hat", "wFactor": 1.4, "yOffset": -0.30, "xOffset": 0.00,  "rot": true },
   "assets/hats/pirat.png":     { "fit": "hat", "wFactor": 2.0, "yOffset": 0.12, "xOffset": 0.00,  "rot": true },
   "assets/hats/rishatt.png":   { "fit": "hat", "wFactor": 2.0, "yOffset": -0.40, "xOffset": 0.00,  "rot": true },
