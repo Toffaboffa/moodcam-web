@@ -18,7 +18,30 @@
     "assets/glasses/glasses6.png",
     "assets/glasses/glasses7.png"
   ],
-  "mouth": [],
-  "hats": [],
-  "facial_hair": []
+  "mouth": [
+    "assets/mouth/mouth1.png",
+    "assets/mouth/mouth2.png",
+    "assets/mouth/mouth3.png",
+    "assets/mouth/mouth4.png",
+    "assets/mouth/mouth5.png",
+    "assets/mouth/mouth6.png",
+    "assets/mouth/mouth7.png",
+    "assets/mouth/mouth8.png"
+  ],
+  "hats": [
+    "assets/hats/basker.png",
+    "assets/hats/cowboy.png",
+    "assets/hats/hat1.png",
+    "assets/hats/mössa.png",
+    "assets/hats/pirat.png",
+    "assets/hats/rishatt.png",
+    "assets/hats/sommar.png",
+    "assets/hats/tomteluva.png"
+  ],
+  "facial_hair": [
+    "assets/facial_hair/beard1.png",
+    "assets/facial_hair/musta1.png",
+    "assets/facial_hair/musta2.png",
+    "assets/facial_hair/musta3.png"
+  ]
 }
