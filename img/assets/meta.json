@@ -1,6 +1,6 @@
 {
   "assets/eyes/eyes1.png": { "fit": "eyes", "wFactor": 2.10, "yOffset": -0.20, "xOffset": 0.00, "rot": true },
-  "assets/eyes/eyes2.png": { "fit": "eyes", "wFactor": 2.40, "yOffset": -0.05, "xOffset": 0.00, "rot": true },
+  "assets/eyes/eyes2.png": { "fit": "eyes", "wFactor": 2.50, "yOffset": -0.05, "xOffset": 0.05, "rot": true },
   "assets/eyes/eyes3.png": { "fit": "eyes", "wFactor": 2.30, "yOffset": -0.10, "xOffset": 0.00, "rot": true },
   "assets/eyes/eyes4.png": { "fit": "eyes", "wFactor": 2.00, "yOffset": -0.15, "xOffset": 0.00, "rot": true },
   "assets/eyes/eyes5.png": { "fit": "eyes", "wFactor": 2.40, "yOffset": -0.08, "xOffset": 0.00, "rot": true },
