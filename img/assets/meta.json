@@ -13,5 +13,34 @@
   "assets/glasses/glasses4.png": { "fit": "glasses", "wFactor": 2.10, "yOffset": 0.06, "xOffset": 0.00, "rot": true },
   "assets/glasses/glasses5.png": { "fit": "glasses", "wFactor": 1.95, "yOffset": 0.05, "xOffset": 0.00, "rot": true },
   "assets/glasses/glasses6.png": { "fit": "glasses", "wFactor": 2.15, "yOffset": 0.06, "xOffset": 0.00, "rot": true },
-  "assets/glasses/glasses7.png": { "fit": "glasses", "wFactor": 1.90, "yOffset": 0.04, "xOffset": 0.00, "rot": true }
+  "assets/glasses/glasses7.png": { "fit": "glasses", "wFactor": 1.90, "yOffset": 0.04, "xOffset": 0.00, "rot": true },
+
+  /* Munnar – centreras på munbredd, roteras med ögonlinjen */
+  "assets/mouth/mouth1.png": { "fit": "mouth", "wFactor": 1.30, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
+  "assets/mouth/mouth2.png": { "fit": "mouth", "wFactor": 1.30, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
+  "assets/mouth/mouth3.png": { "fit": "mouth", "wFactor": 1.30, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
+  "assets/mouth/mouth4.png": { "fit": "mouth", "wFactor": 1.30, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
+  "assets/mouth/mouth5.png": { "fit": "mouth", "wFactor": 1.30, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
+  "assets/mouth/mouth6.png": { "fit": "mouth", "wFactor": 1.30, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
+  "assets/mouth/mouth7.png": { "fit": "mouth", "wFactor": 1.30, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
+  "assets/mouth/mouth8.png": { "fit": "mouth", "wFactor": 1.30, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
+
+  /* Hattar – skala mot uppskattad ansiktsbredd, lite högre upp */
+  "assets/hats/basker.png":    { "fit": "hat", "wFactor": 1.10, "yOffset": -0.22, "xOffset": -0.05, "rot": true },
+  "assets/hats/cowboy.png":    { "fit": "hat", "wFactor": 1.25, "yOffset": -0.25, "xOffset": 0.00,  "rot": true },
+  "assets/hats/hat1.png":      { "fit": "hat", "wFactor": 1.20, "yOffset": -0.22, "xOffset": 0.00,  "rot": true },
+  "assets/hats/mössa.png":     { "fit": "hat", "wFactor": 1.15, "yOffset": -0.30, "xOffset": 0.00,  "rot": true },
+  "assets/hats/pirat.png":     { "fit": "hat", "wFactor": 1.25, "yOffset": -0.22, "xOffset": 0.00,  "rot": true },
+  "assets/hats/rishatt.png":   { "fit": "hat", "wFactor": 1.60, "yOffset": -0.40, "xOffset": 0.00,  "rot": true },
+  "assets/hats/sommar.png":    { "fit": "hat", "wFactor": 1.35, "yOffset": -0.28, "xOffset": 0.00,  "rot": true },
+  "assets/hats/tomteluva.png": { "fit": "hat", "wFactor": 1.20, "yOffset": -0.25, "xOffset": 0.05,  "rot": true },
+
+  /* Skägg & mustasch:
+     - beard1: skala mot ansiktsbredd (fit: "beard")
+     - musta*: skala mot munbredd och placera strax ovan (fit: "mouth") */
+  "assets/facial_hair/beard1.png": { "fit": "beard", "wFactor": 1.00, "yOffset": 0.10, "xOffset": 0.00, "rot": true },
+
+  "assets/facial_hair/musta1.png": { "fit": "mouth", "wFactor": 1.10, "yOffset": -0.20, "xOffset": 0.00, "rot": true },
+  "assets/facial_hair/musta2.png": { "fit": "mouth", "wFactor": 1.10, "yOffset": -0.20, "xOffset": 0.00, "rot": true },
+  "assets/facial_hair/musta3.png": { "fit": "mouth", "wFactor": 1.10, "yOffset": -0.20, "xOffset": 0.00, "rot": true }
 }
