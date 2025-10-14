@@ -15,7 +15,6 @@
   "assets/glasses/glasses6.png": { "fit": "glasses", "wFactor": 2.15, "yOffset": 0.06, "xOffset": 0.00, "rot": true },
   "assets/glasses/glasses7.png": { "fit": "glasses", "wFactor": 1.90, "yOffset": 0.04, "xOffset": 0.00, "rot": true },
 
-  /* Munnar – centreras på munbredd, roteras med ögonlinjen */
   "assets/mouth/mouth1.png": { "fit": "mouth", "wFactor": 1.30, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
   "assets/mouth/mouth2.png": { "fit": "mouth", "wFactor": 1.30, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
   "assets/mouth/mouth3.png": { "fit": "mouth", "wFactor": 1.30, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
@@ -25,7 +24,6 @@
   "assets/mouth/mouth7.png": { "fit": "mouth", "wFactor": 1.30, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
   "assets/mouth/mouth8.png": { "fit": "mouth", "wFactor": 1.30, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
 
-  /* Hattar – skala mot uppskattad ansiktsbredd, lite högre upp */
   "assets/hats/basker.png":    { "fit": "hat", "wFactor": 1.40, "yOffset": -0.22, "xOffset": -0.05, "rot": true },
   "assets/hats/cowboy.png":    { "fit": "hat", "wFactor": 1.75, "yOffset": -0.25, "xOffset": 0.00,  "rot": true },
   "assets/hats/hat1.png":      { "fit": "hat", "wFactor": 1.20, "yOffset": -0.22, "xOffset": 0.00,  "rot": true },
@@ -35,11 +33,7 @@
   "assets/hats/sommar.png":    { "fit": "hat", "wFactor": 5.0, "yOffset": 0.00, "xOffset": 0.00,  "rot": true },
   "assets/hats/tomteluva.png": { "fit": "hat", "wFactor": 1.80, "yOffset": -0.25, "xOffset": 0.05,  "rot": true },
 
-  /* Skägg & mustasch:
-     - beard1: skala mot ansiktsbredd (fit: "beard")
-     - musta*: skala mot munbredd och placera strax ovan (fit: "mouth") */
   "assets/facial_hair/beard1.png": { "fit": "beard", "wFactor": 1.00, "yOffset": -1.10, "xOffset": 0.00, "rot": true },
-
   "assets/facial_hair/musta1.png": { "fit": "mouth", "wFactor": 0.60, "yOffset": -2.50, "xOffset": 0.00, "rot": true },
   "assets/facial_hair/musta2.png": { "fit": "mouth", "wFactor": 1.10, "yOffset": -1.20, "xOffset": 0.00, "rot": true },
   "assets/facial_hair/musta3.png": { "fit": "mouth", "wFactor": 1.10, "yOffset": -1.20, "xOffset": 0.00, "rot": true }
