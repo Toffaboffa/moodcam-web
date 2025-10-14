@@ -1,8 +1,8 @@
 {
   "assets/eyes/eyes1.png": {
     "fit": "eyes",
-    "wFactor": 2.35,
-    "yOffset": -0.15,
+    "wFactor": 2.25,
+    "yOffset": -0.2,
     "xOffset": 0.00,
     "rot": true
   },
