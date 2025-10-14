@@ -2,7 +2,7 @@
   "assets/eyes/eyes1.png": {
     "fit": "eyes",
     "wFactor": 2.35,
-    "yOffset": 0.12,
+    "yOffset": -0.10,
     "xOffset": 0.00,
     "rot": true
   },
