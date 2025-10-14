@@ -4,6 +4,8 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Vialundskolans MoodCam (v.1.2.1)</title>
+  <!-- Slipp favicon 404 -->
+  <link rel="icon" href="data:,">
   <style>
     :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
     html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,Segoe UI,Roboto,sans-serif}
@@ -143,6 +145,19 @@
   <div class="hud">Allt körs lokalt i datorn. /Kristoffer</div>
 
 <script>
+/* ---------- Konsolfilter (tysta biblioteksspam) ---------- */
+const ORIG_CONSOLE = { info: console.info, warn: console.warn, log: console.log };
+const NOISE_PATTERNS = [
+  /already been set/i,
+  /backend was already registered/i,
+  /kernel .* already registered/i
+];
+console.warn = (...args)=>{ const s=(args||[]).join(' '); if (NOISE_PATTERNS.some(r=>r.test(s))) return; ORIG_CONSOLE.warn.apply(console,args); };
+console.info = (...args)=>{ const s=(args||[]).join(' '); if (NOISE_PATTERNS.some(r=>r.test(s))) return; ORIG_CONSOLE.info.apply(console,args); };
+// Lämna console.error orörd.
+
+const DEBUG = false;
+
 /* ---------- Konstanter & state ---------- */
 const EMO_SV = { angry:"Arg", disgusted:"Äcklad", fearful:"Rädd", happy:"Glad", neutral:"Neutral", sad:"Ledsen", surprised:"Förvånad" };
 const EMO_EMOJI = { angry:"😠", disgusted:"🤢", fearful:"😨", happy:"😄", neutral:"😐", sad:"😢", surprised:"😮" };
@@ -167,7 +182,7 @@ async function loadAssetMeta(){
   try{
     const r = await fetch('./img/assets/meta.json', {cache:'no-store'});
     if (r.ok) assetMeta = await r.json();
-  }catch(e){ console.warn('[MoodCam] assets/meta.json saknas/oläslig', e); }
+  }catch(e){ if (DEBUG) console.warn('[MoodCam] assets/meta.json saknas/oläslig', e); }
 }
 
 let LANDMARKS_AVAILABLE = false;
@@ -255,7 +270,7 @@ async function loadOverlayManifest(themeName){
       });
     }
     await Promise.all(toLoad);
-  } catch(e){ console.warn('[MoodCam] Overlay manifest kunde inte laddas', e); }
+  } catch(e){ if (DEBUG) console.warn('[MoodCam] Overlay manifest kunde inte laddas', e); }
 }
 function choiceWeighted(arr){
   if(!arr || !arr.length) return null;
@@ -296,6 +311,23 @@ function defaultFitForFile(path){
   if (path.startsWith('assets/hats/'))        return 'hat';
   return 'bbox';
 }
+
+/* ---------- Pepp: enkla fraser ---------- */
+const PEPP = {
+  all: [
+    "Du fixar det här! 💪","Snyggt fokus!","En sak i taget.","Andas in, andas ut 😊",
+    "Testa igen – nu sitter den!","Bra energi!"
+  ],
+  skola: ["Kunskap = superkraft","Skriv lite till ✍️","Du lär dig nu!"],
+  maende: ["Ta en mikropaus 💧","Sträck på dig!","Ditt bästa räcker."],
+  basta: ["Gör ditt bästa – det räcker","Små steg ➜ stora resultat"],
+  van: ["Var snäll – det smittar 🤝","Le mot någon idag 🙂"]
+};
+function randomPepp(){
+  const pool = peppCat==='all' ? Object.values(PEPP).flat() : (PEPP[peppCat]||PEPP.all);
+  return pool[Math.floor(Math.random()*pool.length)];
+}
+
 function drawItem(meta, track, x,y,w,h){
   if(!meta) return;
   const path = `./img/${meta.file}`;
@@ -307,7 +339,6 @@ function drawItem(meta, track, x,y,w,h){
   const flipX = !!cfg.flipX;
   const rotWithEyes = (cfg.rot !== false);
 
-  /* --------- ÄNDRING: använd sticky flagga --------- */
   const usePose = track.usePose && fit !== 'bbox';
 
   if (usePose){
@@ -332,16 +363,14 @@ function drawItem(meta, track, x,y,w,h){
     const dx = (cfg.xOffset || defX) * refW;
     const dy = ((cfg.yOffset !== undefined ? cfg.yOffset : defY)) * refW;
 
-    const px = cx + dx - drawW/2;
-    const py = cy + dy - drawH/2;
-
     ctx.save();
     if (rotWithEyes){
-      ctx.translate(cx + dx, cy + dy);
+      ctx.translate(eyeC.x + dx, eyeC.y + dy);
       if (flipX) ctx.scale(-1,1);
       ctx.rotate(angle);
       ctx.drawImage(img, -drawW/2, -drawH/2, drawW, drawH);
     } else {
+      const px = eyeC.x + dx - drawW/2, py = eyeC.y + dy - drawH/2;
       if (flipX){ ctx.translate(px+drawW/2, py+drawH/2); ctx.scale(-1,1); ctx.drawImage(img,-drawW/2,-drawH/2,drawW,drawH); }
       else ctx.drawImage(img, px, py, drawW, drawH);
     }
@@ -392,7 +421,7 @@ async function listCams(defaultIndex=0){
       const o=document.createElement('option'); o.value=d.deviceId||''; o.textContent=d.label||`Kamera ${i+1}`; sel.appendChild(o);
     });
     if (!sel.value && devices.length) sel.selectedIndex = Math.min(defaultIndex, devices.length-1);
-  }catch(e){ console.warn('[MoodCam] enumerateDevices fel', e); }
+  }catch(e){ if (DEBUG) console.warn('[MoodCam] enumerateDevices fel', e); }
 }
 async function startCamera(deviceId){
   try{
@@ -430,7 +459,7 @@ function ensureModelsLoading(){
         console.info('[MoodCam] Landmarks aktiverade');
       }catch(e){
         LANDMARKS_AVAILABLE=false;
-        console.warn('[MoodCam] Landmarks kunde inte laddas:', e);
+        if (DEBUG) console.warn('[MoodCam] Landmarks kunde inte laddas:', e);
       }
       console.timeEnd('[MoodCam] Modeller klara');
       return true;
@@ -461,14 +490,13 @@ async function tick(){
 
     const options = new faceapi.TinyFaceDetectorOptions({ inputSize: DETECTOR_SIZE, scoreThreshold: 0.6 });
 
-    // Bygg kedjan säkert och logga hur det ser ut
     let builder = faceapi.detectAllFaces(video, options);
     const typeBefore = typeof builder.withFaceLandmarks;
     if (LANDMARKS_AVAILABLE && typeBefore === 'function') builder = builder.withFaceLandmarks();
     builder = builder.withFaceExpressions().withAgeAndGender();
 
     const dets = await builder;
-    if ((Math.random()<0.02)) console.debug('[MoodCam] Frame', {withFaceLandmarks:typeBefore, dets:dets.length}); // sporadisk logg
+    // (debugrad borttagen)
 
     ctx.clearRect(0,0,overlay.width,overlay.height);
 
@@ -488,7 +516,6 @@ async function tick(){
           : bbox.slice();
         best.last=now;
       } else {
-        /* ------- ÄNDRING: track med sticky pose-fält ------- */
         const t={ id:nextId++, bbox, last:now, created:now, seenFrames:0, counted:false,
                   peppText:null, ageHist:[], warm:0, contributing:false, effects:null, pose:{},
                   usePose:false, poseValid:0, poseInvalid:0 };
@@ -532,24 +559,11 @@ async function tick(){
         if (faceW!=null)  pz.faceW  = ema(pz.faceW,  faceW,  POSE_ALPHA);
       }
 
-      /* ------- ÄNDRING: hysteresis för pose-läge ------- */
+      // sticky/hysteresis för pose-läge
       {
         const validNow = !!det.landmarks && isValidPose(tr.pose, b.width, b.height);
-        if (validNow) {
-          tr.poseValid = (tr.poseValid || 0) + 1;
-          tr.poseInvalid = 0;
-          if (!tr.usePose && tr.poseValid >= 2) {
-            tr.usePose = true;
-            console.log(`[MoodCam] Track #${tr.id}: pose ON`);
-          }
-        } else {
-          tr.poseInvalid = (tr.poseInvalid || 0) + 1;
-          tr.poseValid = 0;
-          if (tr.usePose && tr.poseInvalid >= 6) {
-            tr.usePose = false;
-            console.log(`[MoodCam] Track #${tr.id}: pose OFF (fallback to bbox)`);
-          }
-        }
+        if (validNow) { tr.poseValid++; tr.poseInvalid=0; if(!tr.usePose && tr.poseValid>=2) tr.usePose=true; }
+        else { tr.poseInvalid++; tr.poseValid=0; if(tr.usePose && tr.poseInvalid>=6) tr.usePose=false; }
       }
 
       // äcklad boost
@@ -606,7 +620,6 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
 
 /* ---------- Init ---------- */
 (async function init(){
-  // Basinfo i konsolen
   console.info('[MoodCam] Init… TFJS:', (tf && tf.version_core)||'n/a', 'face-api:', (faceapi && faceapi.version)||'n/a');
 
   video=document.getElementById('video'); overlay=document.getElementById('overlay'); ctx=overlay.getContext('2d');
@@ -636,11 +649,14 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
   themeSel.value = selectedTheme;
   themeSel.addEventListener('change', async e=>{
     selectedTheme = e.target.value;
-    await loadOverlayManifest(selectedTheme);
-    tracks.forEach(t=>assignEffects(t));
+    if (overlaysEnabled) { await loadOverlayManifest(selectedTheme); tracks.forEach(t=>assignEffects(t)); }
   });
 
-  document.getElementById('overlayToggle').addEventListener('change', e=> { overlaysEnabled=e.target.checked; tracks.forEach(t=>assignEffects(t)); });
+  document.getElementById('overlayToggle').addEventListener('change', async e=> {
+    overlaysEnabled=e.target.checked;
+    if (overlaysEnabled && !overlayManifest) await loadOverlayManifest(selectedTheme);
+    tracks.forEach(t=>assignEffects(t));
+  });
   document.getElementById('ovHats').addEventListener('change', e=> { overlayUse.hats=e.target.checked; tracks.forEach(t=>assignEffects(t)); });
   document.getElementById('ovGlasses').addEventListener('change', e=> { overlayUse.glasses=e.target.checked; tracks.forEach(t=>assignEffects(t)); });
   document.getElementById('ovEyes').addEventListener('change', e=> { overlayUse.eyes=e.target.checked; tracks.forEach(t=>assignEffects(t)); });
@@ -654,9 +670,8 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
   METER_GOAL_SECONDS=parseInt(goalInput.value,10); goalLabel.textContent=METER_GOAL_SECONDS;
   goalInput.addEventListener('input', e=>{ METER_GOAL_SECONDS=parseInt(e.target.value,10); goalLabel.textContent=METER_GOAL_SECONDS; });
 
-  // Kicka igång laddningar
+  // Kicka igång laddningar (tyst): meta ja, manifest bara om overlays är på
   await loadAssetMeta();
-  loadOverlayManifest(selectedTheme);
   listCams(1);
   ensureModelsLoading(); // i bakgrunden
 
@@ -672,7 +687,7 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
     document.getElementById('start').disabled = true;
   });
 
-  // Global fel-logg
+  // Global fel-logg (behåll)
   window.addEventListener('error', (e)=> console.error('[MoodCam] window error:', e.error||e.message));
 })();
 </script>
