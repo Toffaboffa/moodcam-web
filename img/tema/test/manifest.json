@@ -1,7 +1,7 @@
 {
   "meta": { "name": "test" },
   "eyes": [
-    "assets/eyes/eyes2.png"
+    "assets/eyes/eyes1.png","assets/eyes/eyes2.png","assets/eyes/eyes3.png","assets/eyes/eyes4.png","assets/eyes/eyes5.png","assets/eyes/eyes6.png","assets/eyes/eyes7.png"
   ],
   "glasses": [],
   "mouth": [],
