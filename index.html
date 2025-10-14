@@ -394,8 +394,16 @@ function drawItem(meta, track, x,y,w,h){
 
   const bw = w * (cfg.scale ?? def.scale);
   const bh = bw * (img.naturalHeight/img.naturalWidth);
-  const px = x + (cfg.dx ?? def.dx) * w;
-  const py = y + (cfg.dy ?? def.dy) * h;
+  
+  // tillåt xOffset/yOffset även utan landmärken
+  // approx: använd 0.35*w som "ögonavstånd" när vi saknar pose
+  const eyeApprox = w * 0.35;
+  const extraX = (cfg.xOffset != null ? cfg.xOffset * eyeApprox : 0);
+  const extraY = (cfg.yOffset != null ? cfg.yOffset * eyeApprox : 0);
+  
+  const px = x + (cfg.dx ?? def.dx) * w + extraX;
+  const py = y + (cfg.dy ?? def.dy) * h + extraY;
+
   ctx.save();
   if (flipX){ ctx.translate(px+bw/2, py+bh/2); ctx.scale(-1,1); ctx.drawImage(img,-bw/2,-bh/2,bw,bh); }
   else ctx.drawImage(img, px, py, bw, bh);
