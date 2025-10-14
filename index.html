@@ -307,7 +307,8 @@ function drawItem(meta, track, x,y,w,h){
   const flipX = !!cfg.flipX;
   const rotWithEyes = (cfg.rot !== false);
 
-  const usePose = isValidPose(track.pose, w, h) && fit !== 'bbox';
+  /* --------- ÄNDRING: använd sticky flagga --------- */
+  const usePose = track.usePose && fit !== 'bbox';
 
   if (usePose){
     const p = track.pose;
@@ -487,8 +488,10 @@ async function tick(){
           : bbox.slice();
         best.last=now;
       } else {
+        /* ------- ÄNDRING: track med sticky pose-fält ------- */
         const t={ id:nextId++, bbox, last:now, created:now, seenFrames:0, counted:false,
-                  peppText:null, ageHist:[], warm:0, contributing:false, effects:null, pose:{} };
+                  peppText:null, ageHist:[], warm:0, contributing:false, effects:null, pose:{},
+                  usePose:false, poseValid:0, poseInvalid:0 };
         tracks.push(t); if(overlaysEnabled) assignEffects(t);
       }
       const tr=(best && bestIoU>0.3)? best : tracks[tracks.length-1];
@@ -527,6 +530,26 @@ async function tick(){
         if (mouthC){ pz.mouthCx = ema(pz.mouthCx, mouthC.x, POSE_ALPHA); pz.mouthCy = ema(pz.mouthCy, mouthC.y, POSE_ALPHA); }
         if (mouthW!=null) pz.mouthW = ema(pz.mouthW, mouthW, POSE_ALPHA);
         if (faceW!=null)  pz.faceW  = ema(pz.faceW,  faceW,  POSE_ALPHA);
+      }
+
+      /* ------- ÄNDRING: hysteresis för pose-läge ------- */
+      {
+        const validNow = !!det.landmarks && isValidPose(tr.pose, b.width, b.height);
+        if (validNow) {
+          tr.poseValid = (tr.poseValid || 0) + 1;
+          tr.poseInvalid = 0;
+          if (!tr.usePose && tr.poseValid >= 2) {
+            tr.usePose = true;
+            console.log(`[MoodCam] Track #${tr.id}: pose ON`);
+          }
+        } else {
+          tr.poseInvalid = (tr.poseInvalid || 0) + 1;
+          tr.poseValid = 0;
+          if (tr.usePose && tr.poseInvalid >= 6) {
+            tr.usePose = false;
+            console.log(`[MoodCam] Track #${tr.id}: pose OFF (fallback to bbox)`);
+          }
+        }
       }
 
       // äcklad boost
