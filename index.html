@@ -5,33 +5,52 @@
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Vialundskolans MoodCam (v.1.2.1)</title>
   <link rel="icon" href="data:,">
-  <style>
-    :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
-    html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,Segoe UI,Roboto,sans-serif}
-    #stage{display:grid;grid-template-columns:1fr;gap:16px;height:100vh;align-items:center;justify-items:center;padding:12px}
-    .topbar{position:fixed;top:10px;left:10px;display:flex;gap:8px;z-index:10}
-    .btn{background:var(--panel2);border:1px solid var(--border);color:var(--fg);padding:8px 12px;border-radius:8px;cursor:pointer}
-    .btn:disabled{opacity:.5;cursor:not-allowed}
-    .layer-wrap{position:relative;display:inline-block;border-radius:12px;overflow:hidden;box-shadow:0 12px 36px rgba(0,0,0,.5);max-width:96vw;max-height:86vh}
-    video{display:block;width:100%;height:auto}
-    canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-    #meterWrap{position:absolute;left:50%;transform:translateX(-50%);bottom:0;background:var(--panel);border:1px solid var(--border);border-bottom-left-radius:0;border-bottom-right-radius:0;border-top-left-radius:10px;border-top-right-radius:10px;padding:6px 10px;width:min(360px,70%);z-index:10}
-    #meterBar{position:relative;height:8px;background:#0d1218;border-radius:6px;overflow:hidden;border:1px solid var(--border)}
-    #meterFill{height:100%;width:0%;background:linear-gradient(90deg,#2dd4bf,#22c55e)}
-    .meterVal{position:absolute;right:6px;top:-16px;opacity:.85}
-    .small{font-size:12px;opacity:.8}
-    #settings{display:none;position:fixed;right:12px;top:52px;width:360px;max-height:85vh;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px 12px 8px;z-index:20}
-    #settings h3{margin:6px 0 8px 0;font-size:16px}
-    #settings .row{display:flex;justify-content:space-between;align-items:center;margin:8px 0}
-    #settings label{font-size:14px}
-    details{border:1px dashed var(--border);border-radius:8px;padding:6px;margin-top:8px}
-    summary{cursor:pointer}
-    .desc{font-size:12px;opacity:.75;margin:4px 0 0}
-    input[type="range"]{width:190px}
-    .two-col{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center}
-    .hud{position:fixed;left:14px;bottom:14px;font-size:12px;opacity:.7}
-  </style>
+<style>
+  :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,Segoe UI,Roboto,sans-serif}
+  #stage{display:grid;grid-template-columns:1fr;gap:16px;height:100vh;align-items:center;justify-items:center;padding:12px}
 
+  .topbar{position:fixed;top:10px;left:10px;display:flex;gap:8px;z-index:10}
+  .btn{background:var(--panel2);border:1px solid var(--border);color:var(--fg);padding:8px 12px;border-radius:8px;cursor:pointer}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+
+  .layer-wrap{position:relative;display:inline-block;border-radius:12px;overflow:hidden;box-shadow:0 12px 36px rgba(0,0,0,.5);max-width:96vw;max-height:86vh}
+
+  /* Ordning: video (0) < canvas (1) < meter (2) */
+  video{
+    display:block;width:100%;height:auto;
+    position:relative; z-index:0;
+  }
+  canvas{
+    position:absolute; inset:0; width:100%; height:100%;
+    pointer-events:none; z-index:1;
+  }
+  #meterWrap{
+    position:absolute; left:50%; transform:translateX(-50%); bottom:0;
+    background:var(--panel); border:1px solid var(--border);
+    border-bottom-left-radius:0; border-bottom-right-radius:0;
+    border-top-left-radius:10px; border-top-right-radius:10px;
+    padding:6px 10px; width:min(360px,70%);
+    z-index:2; /* över overlays */
+  }
+
+  #meterBar{position:relative;height:8px;background:#0d1218;border-radius:6px;overflow:hidden;border:1px solid var(--border)}
+  #meterFill{height:100%;width:0%;background:linear-gradient(90deg,#2dd4bf,#22c55e)}
+  .meterVal{position:absolute;right:6px;top:-16px;opacity:.85}
+  .small{font-size:12px;opacity:.8}
+
+  #settings{display:none;position:fixed;right:12px;top:52px;width:360px;max-height:85vh;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px 12px 8px;z-index:20}
+  #settings h3{margin:6px 0 8px 0;font-size:16px}
+  #settings .row{display:flex;justify-content:space-between;align-items:center;margin:8px 0}
+  #settings label{font-size:14px}
+
+  details{border:1px dashed var(--border);border-radius:8px;padding:6px;margin-top:8px}
+  summary{cursor:pointer}
+  .desc{font-size:12px;opacity:.75;margin:4px 0 0}
+  input[type="range"]{width:190px}
+  .two-col{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center}
+  .hud{position:fixed;left:14px;bottom:14px;font-size:12px;opacity:.7}
+</style>
   <!-- Cache-bust -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.21.0/dist/tf.min.js?v=mc1"></script>
   <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js?v=mc1"></script>
