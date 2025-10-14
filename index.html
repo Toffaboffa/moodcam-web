@@ -488,10 +488,12 @@ async function tick(){
 
   const options = new faceapi.TinyFaceDetectorOptions({ inputSize: DETECTOR_SIZE, scoreThreshold: 0.6 });
 
-  let p = faceapi.detectAllFaces(video, options).withFaceExpressions().withAgeAndGender();
-  if (LANDMARKS_AVAILABLE) p = p.withFaceLandmarks();
+  let task = faceapi.detectAllFaces(video, options);
+  if (LANDMARKS_AVAILABLE) task = task.withFaceLandmarks();
+  task = task.withFaceExpressions().withAgeAndGender();
+  
+  const dets = await task;
 
-  const dets = await p;
   ctx.clearRect(0,0,overlay.width,overlay.height);
 
   for (const det of dets){
