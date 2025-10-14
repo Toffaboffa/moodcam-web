@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Vialundskolans MoodCam (v.1.1.1)</title>
+  <title>Vialundskolans MoodCam (v.1.2.0)</title>
   <style>
     :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
     html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,Segoe UI,Roboto,sans-serif}
@@ -16,7 +16,6 @@
     video{display:block;width:100%;height:auto}
     canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 
-    /* Moodmätare */
     #meterWrap{
       position:absolute;left:50%;transform:translateX(-50%);bottom:0;
       background:var(--panel);border:1px solid var(--border);
@@ -28,7 +27,6 @@
     .meterVal{position:absolute;right:6px;top:-16px;opacity:.85}
     .small{font-size:12px;opacity:.8}
 
-    /* Settings */
     #settings{display:none;position:fixed;right:12px;top:52px;width:360px;max-height:85vh;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px 12px 8px;z-index:20}
     #settings h3{margin:6px 0 8px 0;font-size:16px}
     #settings .row{display:flex;justify-content:space-between;align-items:center;margin:8px 0}
@@ -117,7 +115,7 @@
       <div class="row"><label>Ögon</label><input type="checkbox" id="ovEyes" checked></div>
       <div class="row"><label>Munnar</label><input type="checkbox" id="ovMouth" checked></div>
       <div class="row"><label>Skägg</label><input type="checkbox" id="ovBeard" checked></div>
-      <p class="desc">Hämtas från <code>img/tema/&lt;tema&gt;/manifest.json</code> eller “Aktivt” (img/manifest.json).</p>
+      <p class="desc">Tema anger *vilka filer*; passform kommer från <code>img/assets/meta.json</code>.</p>
     </details>
 
     <details>
@@ -172,17 +170,27 @@ let peppCat = 'all';
 const THEMES = ["Aktivt (img/manifest.json)","halloween","jul","sommar","skolstart","test"];
 let selectedTheme = THEMES[0];
 
+/* Overlays & cache */
 let overlaysEnabled = false;
 const overlayUse = { hats:true, glasses:true, eyes:true, mouth:true, beard:true };
 let overlayManifest = null;
 const imgCache = new Map();
 
+/* Per-bild meta (global) */
+let assetMeta = {};
+async function loadAssetMeta(){
+  try{
+    const r = await fetch('./img/assets/meta.json', {cache:'no-store'});
+    if (r.ok) assetMeta = await r.json();
+  }catch(e){ console.warn('assets/meta.json saknas/oläslig', e); }
+}
+
 let LANDMARKS_AVAILABLE = false;
 
-let video, overlay, ctx, currentStream=null, videoTrack=null;
+let video, overlay, ctx, currentStream=null;
 
 /* Tracks */
-const tracks = []; // {id,bbox,last,created,seenFrames,counted,peppText,ageHist:[],warm,contributing,effects:{}}
+const tracks = []; // {id,bbox,last,created,seenFrames,counted,peppText,ageHist:[],warm,contributing,effects:{},pose:{}}
 let nextId = 1;
 
 let lastFrameTime = performance.now();
@@ -196,6 +204,11 @@ const HAPPY_WARMUP_SECONDS = 3;
 const CONTRIB_WEIGHT_BY_CONF = true;
 
 const RESET_H = 19, RESET_M = 30;
+
+/* Jitter-filter */
+const POSE_ALPHA = 0.15; // lägre = mjukare
+const BBOX_ALPHA = 0.25;
+const ema = (prev, next, a)=> (prev==null? next : prev + a*(next - prev));
 
 /* Logg */
 const visitorsByDay = JSON.parse(localStorage.getItem('moodcam.visitors') || '{}');
@@ -253,8 +266,15 @@ async function loadOverlayManifest(themeName){
     if(!resp.ok) return;
     const data=await resp.json();
     if (!data.facial_hair && data.faceal_hair) data.facial_hair = data.faceal_hair;
+
+    // normalisera listor till objekt {file:"..."}
+    for (const cat of ["hats","glasses","eyes","mouth","facial_hair"]) {
+      const src = data[cat] || [];
+      data[cat] = src.map(it => (typeof it === 'string' ? { file: it } : it));
+    }
     overlayManifest = data;
 
+    // förladda bilder
     const toLoad=[];
     for (const cat of ["hats","glasses","eyes","mouth","facial_hair"]) {
       (data[cat]||[]).forEach(item=>{
@@ -286,37 +306,98 @@ function assignEffects(track){
   if (overlayUse.beard)   e.beard = choiceWeighted(overlayManifest.facial_hair) || null;
   track.effects = e;
 }
-function drawItem(meta, x,y,w,h){
+
+/* ---- Ritning med per-bild-meta + utjämnad pose ---- */
+function defaultFitForFile(path){
+  if (path.startsWith('assets/glasses/'))     return 'glasses';
+  if (path.startsWith('assets/eyes/'))        return 'eyes';
+  if (path.startsWith('assets/mouth/'))       return 'mouth';
+  if (path.startsWith('assets/facial_hair/')) return 'beard';
+  if (path.startsWith('assets/hats/'))        return 'hat';
+  return 'bbox';
+}
+
+function drawItem(meta, track, x,y,w,h){
   if(!meta) return;
   const path = `./img/${meta.file}`;
   const img = imgCache.get(path); if(!img) return;
 
+  // slå ihop per-bild-meta (global) över tema-item
+  const mAsset = assetMeta[meta.file] || {};
+  const cfg = { ...meta, ...mAsset };
+  const fit = (cfg.fit || defaultFitForFile(cfg.file));
+  const flipX = !!cfg.flipX;
+  const rotWithEyes = (cfg.rot !== false);
+
+  const hasPose = !!track.pose;
+
+  if (hasPose && fit !== 'bbox'){
+    const p = track.pose;
+    const eyeC = {x:p.eyeCx, y:p.eyeCy};
+    const eyeD = p.eyeD || (w*0.35);
+    const angle= p.angle || 0;
+    const mouthC = (p.mouthCx!=null && p.mouthCy!=null) ? {x:p.mouthCx, y:p.mouthCy} : {x:eyeC.x, y:eyeC.y + eyeD*0.6};
+    const mouthW = p.mouthW || eyeD*0.9;
+    const faceW  = p.faceW  || w;
+
+    let cx, cy, refW, defWF=1.0, defY=0, defX=0;
+    if (fit==='eyes' || fit==='glasses'){ cx=eyeC.x; cy=eyeC.y; refW=eyeD; defWF=(fit==='eyes')?2.2:2.0; defY=(fit==='eyes')?0.15:0.05; }
+    else if (fit==='mouth'){ cx=mouthC.x; cy=mouthC.y; refW=mouthW; defWF=1.3; }
+    else if (fit==='beard'){ cx=mouthC.x; cy=mouthC.y + eyeD*0.55; refW=faceW; defWF=0.9; defY=0.05; }
+    else if (fit==='hat'){ cx=eyeC.x; cy=eyeC.y - eyeD*0.9; refW=faceW; defWF=1.1; defY=-0.15; }
+
+    const wf = (cfg.wFactor ?? defWF);
+    const drawW = refW * wf;
+    const drawH = drawW * (img.naturalHeight/img.naturalWidth);
+
+    const dx = (cfg.xOffset || defX) * refW;
+    const dy = ((cfg.yOffset !== undefined ? cfg.yOffset : defY)) * refW;
+
+    const px = cx + dx - drawW/2;
+    const py = cy + dy - drawH/2;
+
+    ctx.save();
+    if (rotWithEyes){
+      ctx.translate(cx + dx, cy + dy);
+      if (flipX) ctx.scale(-1,1);
+      ctx.rotate(angle);
+      ctx.drawImage(img, -drawW/2, -drawH/2, drawW, drawH);
+    } else {
+      if (flipX){ ctx.translate(px+drawW/2, py+drawH/2); ctx.scale(-1,1); ctx.drawImage(img,-drawW/2,-drawH/2,drawW,drawH); }
+      else ctx.drawImage(img, px, py, drawW, drawH);
+    }
+    ctx.restore();
+    return;
+  }
+
+  // fallback: bbox
   const def = (()=> {
-    if(meta.file.startsWith('assets/hats/'))        return {anchor:'top',   dx:0.10, dy:-0.35, scale:0.80};
-    if(meta.file.startsWith('assets/glasses/'))     return {anchor:'eyes',  dx:0.20, dy:0.28, scale:0.60};
-    if(meta.file.startsWith('assets/eyes/'))        return {anchor:'eyes',  dx:0.18, dy:0.22, scale:0.64};
-    if(meta.file.startsWith('assets/mouth/'))       return {anchor:'mouth', dx:0.35, dy:0.65, scale:0.30};
-    if(meta.file.startsWith('assets/facial_hair/')) return {anchor:'chin',  dx:0.25, dy:0.62, scale:0.50};
-    return {anchor:'eyes', dx:0.2, dy:0.2, scale:0.6};
+    if(cfg.file.startsWith('assets/hats/'))        return {dx:0.10, dy:-0.35, scale:0.80};
+    if(cfg.file.startsWith('assets/glasses/'))     return {dx:0.20, dy:0.28, scale:0.60};
+    if(cfg.file.startsWith('assets/eyes/'))        return {dx:0.18, dy:0.22, scale:0.64};
+    if(cfg.file.startsWith('assets/mouth/'))       return {dx:0.35, dy:0.65, scale:0.30};
+    if(cfg.file.startsWith('assets/facial_hair/')) return {dx:0.25, dy:0.62, scale:0.50};
+    return {dx:0.2, dy:0.2, scale:0.6};
   })();
 
-  const m = { ...def, ...meta };
-  const bw = w * (m.scale ?? def.scale);
+  const bw = w * (cfg.scale ?? def.scale);
   const bh = bw * (img.naturalHeight/img.naturalWidth);
-  const px = x + (m.dx ?? def.dx) * w;
-  const py = y + (m.dy ?? def.dy) * h;
+  const px = x + (cfg.dx ?? def.dx) * w;
+  const py = y + (cfg.dy ?? def.dy) * h;
   ctx.save();
-  if (m.flipX) { ctx.translate(px+bw/2, py+bh/2); ctx.scale(-1,1); ctx.drawImage(img, -bw/2, -bh/2, bw, bh); ctx.restore(); }
-  else { ctx.drawImage(img, px, py, bw, bh); ctx.restore(); }
+  if (flipX){ ctx.translate(px+bw/2, py+bh/2); ctx.scale(-1,1); ctx.drawImage(img,-bw/2,-bh/2,bw,bh); }
+  else ctx.drawImage(img, px, py, bw, bh);
+  ctx.restore();
 }
+
 function drawEffects(track,x,y,w,h){
   if(!overlaysEnabled || !track.effects) return;
   const e=track.effects;
-  drawItem(e.hat,   x,y,w,h);
-  drawItem(e.glass, x,y,w,h);
-  drawItem(e.eyes,  x,y,w,h);
-  drawItem(e.mouth, x,y,w,h);
-  drawItem(e.beard, x,y,w,h);
+  drawItem(e.hat,   track, x,y,w,h);
+  drawItem(e.glass, track, x,y,w,h);
+  drawItem(e.eyes,  track, x,y,w,h);
+  drawItem(e.mouth, track, x,y,w,h);
+  drawItem(e.beard, track, x,y,w,h);
 }
 
 /* ---------- Kamera ---------- */
@@ -396,12 +477,21 @@ async function tick(){
   for (const det of dets){
     const b = det.detection.box; const bbox=[b.x,b.y,b.width,b.height];
 
-    // matcha track
-    let best=null, bestIoU=0; for(const t of tracks){ const i=iou(t.bbox,bbox); if(i>bestIoU){bestIoU=i; best=t;} }
-    if(best && bestIoU>0.3){ best.bbox=bbox; best.last=now; }
-    else {
+    // matcha track och mjuka bbox
+    let best=null, bestIoU=0;
+    for(const t of tracks){ const i=iou(t.bbox,bbox); if(i>bestIoU){bestIoU=i; best=t;} }
+    if(best && bestIoU>0.3){
+      const pb=best.bbox;
+      best.bbox = pb
+        ? [ema(pb[0], bbox[0], BBOX_ALPHA),
+           ema(pb[1], bbox[1], BBOX_ALPHA),
+           ema(pb[2], bbox[2], BBOX_ALPHA),
+           ema(pb[3], bbox[3], BBOX_ALPHA)]
+        : bbox.slice();
+      best.last=now;
+    } else {
       const t={ id:nextId++, bbox, last:now, created:now, seenFrames:0, counted:false,
-                peppText:null, ageHist:[], warm:0, contributing:false, effects:null };
+                peppText:null, ageHist:[], warm:0, contributing:false, effects:null, pose:{} };
       tracks.push(t); if(overlaysEnabled) assignEffects(t);
     }
     const tr=(best && bestIoU>0.3)? best : tracks[tracks.length-1];
@@ -409,6 +499,38 @@ async function tick(){
     // emotion/age
     const exp=det.expressions||{}; let emo=null, conf=0; for(const [k,v] of Object.entries(exp)) if(v>conf){ emo=k; conf=v; }
     const shownAge = getSmoothedAge(tr, now, det.age ?? null);
+
+    // pose: mjuka ögonlinje/mun/ansiktsbredd
+    if (det.landmarks){
+      const lm = det.landmarks;
+      const mean = pts => { const n=pts.length; const s=pts.reduce((a,p)=>({x:a.x+p.x,y:a.y+p.y}),{x:0,y:0}); return {x:s.x/n,y:s.y/n}; };
+      const dist = (a,b)=> Math.hypot(a.x-b.x,a.y-b.y);
+      const mid  = (a,b)=> ({x:(a.x+b.x)/2, y:(a.y+b.y)/2});
+
+      const Leye = mean(lm.getLeftEye());
+      const Reye = mean(lm.getRightEye());
+      const eyeC = mid(Leye, Reye);
+      const eyeD = dist(Leye, Reye);
+      const angle= Math.atan2(Reye.y - Leye.y, Reye.x - Leye.x);
+
+      const mouth = lm.getMouth?.();
+      const mL = mouth ? mouth[0] : null;
+      const mR = mouth ? mouth[6] : null;
+      const mouthC = (mL && mR) ? mid(mL, mR) : null;
+      const mouthW = (mL && mR) ? dist(mL, mR) : null;
+
+      const jaw = lm.getJawOutline?.();
+      const faceW = jaw ? dist(jaw[0], jaw[16]) : null;
+
+      const pz = tr.pose;
+      pz.eyeCx   = ema(pz.eyeCx,   eyeC.x, POSE_ALPHA);
+      pz.eyeCy   = ema(pz.eyeCy,   eyeC.y, POSE_ALPHA);
+      pz.eyeD    = ema(pz.eyeD,    eyeD,   POSE_ALPHA);
+      pz.angle   = ema(pz.angle,   angle,  POSE_ALPHA);
+      if (mouthC){ pz.mouthCx = ema(pz.mouthCx, mouthC.x, POSE_ALPHA); pz.mouthCy = ema(pz.mouthCy, mouthC.y, POSE_ALPHA); }
+      if (mouthW!=null) pz.mouthW = ema(pz.mouthW, mouthW, POSE_ALPHA);
+      if (faceW!=null)  pz.faceW  = ema(pz.faceW,  faceW,  POSE_ALPHA);
+    }
 
     // äcklad boost
     if (det.landmarks) {
@@ -464,7 +586,7 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
 (async function init(){
   video=document.getElementById('video'); overlay=document.getElementById('overlay'); ctx=overlay.getContext('2d');
 
-  // BIND LISTENERS DIREKT (fixen!)
+  // UI handlers
   document.getElementById('settingsBtn').addEventListener('click', ()=>{ const s=document.getElementById('settings'); s.style.display=(s.style.display==='none'||!s.style.display)?'block':'none'; });
   document.getElementById('conf').addEventListener('input', e=> EMO_CONF_MIN=parseFloat(e.target.value));
   document.getElementById('inputSize').addEventListener('input', e=> DETECTOR_SIZE=parseInt(e.target.value,10));
@@ -472,7 +594,11 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
   document.getElementById('peppCat').addEventListener('change', e=> { peppCat=e.target.value; });
 
   ['fBrightness','fContrast','fSaturate','fHue','fTemp'].forEach(id=>{
-    document.getElementById(id).addEventListener('input', ()=>{ video.style.filter = `brightness(${fBrightness.value}%) contrast(${fContrast.value}%) saturate(${fSaturate.value}%) hue-rotate(${fHue.value}deg)` + ( (+fTemp.value!==0)?` sepia(${Math.max(0,+fTemp.value)*0.006}) hue-rotate(${(+fTemp.value*1.2).toFixed(1)}deg) saturate(${(100 + +fTemp.value*0.2).toFixed(1)}%)`:''); });
+    document.getElementById(id).addEventListener('input', ()=>{
+      video.style.filter =
+        `brightness(${fBrightness.value}%) contrast(${fContrast.value}%) saturate(${fSaturate.value}%) hue-rotate(${fHue.value}deg)` +
+        ((+fTemp.value!==0)?` sepia(${Math.max(0,+fTemp.value)*0.006}) hue-rotate(${(+fTemp.value*1.2).toFixed(1)}deg) saturate(${(100 + +fTemp.value*0.2).toFixed(1)}%)`:'');
+    });
   });
   document.getElementById('filtersReset').addEventListener('click', ()=>{
     fBrightness.value=100; fContrast.value=100; fSaturate.value=100; fHue.value=0; fTemp.value=0;
@@ -504,30 +630,23 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
   METER_GOAL_SECONDS=parseInt(goalInput.value,10); goalLabel.textContent=METER_GOAL_SECONDS;
   goalInput.addEventListener('input', e=>{ METER_GOAL_SECONDS=parseInt(e.target.value,10); goalLabel.textContent=METER_GOAL_SECONDS; });
 
-  // Start-knapp — vänta på modeller OCH kamera vid klick
+  // Kicka igång laddningar
+  await loadAssetMeta();
+  loadOverlayManifest(selectedTheme);
+  listCams(1);
+  ensureModelsLoading(); // i bakgrunden
+
+  // Start-knapp
   document.getElementById('start').addEventListener('click', async ()=>{
-    // starta modell-laddning i bakgrunden om inte redan igång
-    const modelsOK = await ensureModelsLoading();
-    if (!modelsOK) return;
-
-    // kamera
+    const modelsOK = await ensureModelsLoading(); if (!modelsOK) return;
     const sel=document.getElementById('camSel');
-    const ok = await startCamera(sel.value);
-    if (!ok) return;
+    const ok = await startCamera(sel.value); if (!ok) return;
 
-    // kör
     new ResizeObserver(()=>{ overlay.width=video.videoWidth; overlay.height=video.videoHeight; overlay.style.width=video.clientWidth+'px'; overlay.style.height=video.clientHeight+'px'; }).observe(document.getElementById('wrap'));
     requestAnimationFrame(tick);
     document.getElementById('start').disabled = true;
   });
-
-  // Lista kameror och ladda overlaymanifest — men låt det inte blockera knappen
-  listCams(1);
-  loadOverlayManifest(selectedTheme);
-  ensureModelsLoading(); // kicka igång i bakgrunden
 })();
 </script>
-
-<!-- Manifest-exempel kvar längst ned om du behöver -->
 </body>
 </html>
