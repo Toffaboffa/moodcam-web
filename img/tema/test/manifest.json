@@ -29,14 +29,14 @@
     "assets/mouth/mouth8.png"
   ],
   "hats": [
-    "assets/hats/basker.png",
-    "assets/hats/cowboy.png",
-    "assets/hats/hat1.png",
-    "assets/hats/mössa.png",
-    "assets/hats/pirat.png",
-    "assets/hats/rishatt.png",
+    "_assets/hats/basker.png",
+    "_assets/hats/cowboy.png",
+    "_assets/hats/hat1.png",
+    "_assets/hats/mössa.png",
+    "_assets/hats/pirat.png",
+    "_assets/hats/rishatt.png",
     "assets/hats/sommar.png",
-    "assets/hats/tomteluva.png"
+    "_assets/hats/tomteluva.png"
   ],
   "facial_hair": [
     "assets/facial_hair/beard1.png",
