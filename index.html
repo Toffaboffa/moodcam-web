@@ -172,7 +172,7 @@ const DEBUG = false;
 const EMO_SV = { angry:"Arg", disgusted:"Äcklad", fearful:"Rädd", happy:"Glad", neutral:"Neutral", sad:"Ledsen", surprised:"Förvånad" };
 const EMO_EMOJI = { angry:"😠", disgusted:"🤢", fearful:"😨", happy:"😄", neutral:"😐", sad:"😢", surprised:"😮" };
 const EMO_COLOR = { happy:"#28c728", angry:"#2a2ae0", sad:"#c07800", surprised:"#c0c000", fearful:"#00b4b4", disgusted:"#00a078", neutral:"#b0b0b0" };
-const UI = { labelFontSize:14, labelPad:3, pepFontSize:14, pepPad:3, faceBoxWidth:2 };
+const UI = { labelFontSize:14, labelPad:4, pepFontSize:14, pepPad:4, faceBoxWidth:2 };
 
 let EMO_CONF_MIN = 0.40;
 let DETECTOR_SIZE = 320;
@@ -217,7 +217,7 @@ const RESET_H = 19, RESET_M = 30;
 
 /* Jitter-filter */
 const POSE_ALPHA = 0.15;
-const BBOX_ALPHA = 0.25;
+const BBOX_ALPHA = 0.05;
 const ema = (prev, next, a)=> (prev==null? next : prev + a*(next - prev));
 
 /* Spegeltillstånd */
