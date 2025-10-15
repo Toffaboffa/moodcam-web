@@ -121,6 +121,7 @@
       <div class="row"><label>Ögon</label><input type="checkbox" id="ovEyes" checked></div>
       <div class="row"><label>Munnar</label><input type="checkbox" id="ovMouth" checked></div>
       <div class="row"><label>Skägg</label><input type="checkbox" id="ovBeard" checked></div>
+      <div class="row"><label>Visa ansiktsruta</label><input type="checkbox" id="showBox" checked></div>
       <p class="desc">Tema anger *vilka filer*; passform kommer från <code>img/assets/meta.json</code>.</p>
     </details>
 
@@ -217,11 +218,16 @@ const RESET_H = 19, RESET_M = 30;
 
 /* Jitter-filter */
 const POSE_ALPHA = 0.15;
-const BBOX_ALPHA = 0.25;
+// Snabbare storleksrespons än positionsrespons
+const BBOX_POS_ALPHA  = 0.35;
+const BBOX_SIZE_ALPHA = 0.75;
 const ema = (prev, next, a)=> (prev==null? next : prev + a*(next - prev));
 
 /* Spegeltillstånd */
 let MIRROR = false;
+
+/* Visa/dölj ansiktsruta */
+let SHOW_FACE_BOX = true;
 
 /* Logg */
 const visitorsByDay = JSON.parse(localStorage.getItem('moodcam.visitors') || '{}');
@@ -533,11 +539,12 @@ async function tick(){
       for(const t of tracks){ const i=iou(t.bbox,bbox); if(i>bestIoU){bestIoU=i; best=t;} }
       if(best && bestIoU>0.3){
         const pb=best.bbox;
+        // snabbare storleks-EMA
         best.bbox = pb
-          ? [ema(pb[0], bbox[0], BBOX_ALPHA),
-             ema(pb[1], bbox[1], BBOX_ALPHA),
-             ema(pb[2], bbox[2], BBOX_ALPHA),
-             ema(pb[3], bbox[3], BBOX_ALPHA)]
+          ? [ema(pb[0], bbox[0], BBOX_POS_ALPHA),
+             ema(pb[1], bbox[1], BBOX_POS_ALPHA),
+             ema(pb[2], bbox[2], BBOX_SIZE_ALPHA),
+             ema(pb[3], bbox[3], BBOX_SIZE_ALPHA)]
           : bbox.slice();
         best.last=now;
       } else {
@@ -556,11 +563,13 @@ async function tick(){
       if (emo === 'happy' && conf >= EMO_CONF_MIN) {
         tr.warm = Math.min(HAPPY_WARMUP_SECONDS, (tr.warm || 0) + dt);
         if (tr.warm >= HAPPY_WARMUP_SECONDS) {
-          if (!tr.contributing) {
+          // logga exakt en gång per track
+          if (!tr.counted) {
             const key=todayKey();
             visitorsByDay[key]=(visitorsByDay[key]||0)+1;
             localStorage.setItem('moodcam.visitors', JSON.stringify(visitorsByDay));
             updateLogInfo();
+            tr.counted = true;
           }
           tr.contributing = true;
           const weight = CONTRIB_WEIGHT_BY_CONF ? conf : 1;
@@ -619,17 +628,18 @@ async function tick(){
       drawEffects(tr, bx,by,bw,bh);
 
       // 2) face box + etikett (framför)
-      ctx.strokeStyle=color; ctx.lineWidth=UI.faceBoxWidth; ctx.strokeRect(rx,by,bw,bh);
+      if (SHOW_FACE_BOX) {
+        ctx.strokeStyle=color; ctx.lineWidth=UI.faceBoxWidth; ctx.strokeRect(rx,by,bw,bh);
+      }
       if(emo && conf>=EMO_CONF_MIN){
         const label=`${EMO_SV[emo]||emo} · ${Math.round(conf*100)}%` + (shownAge?` · ${shownAge} år`:'');
         drawLabel(rx,by,label);
       } else if(shownAge){ drawLabel(rx,by,`${shownAge} år`); }
 
-      // 3) emoji (främst) – placera i övre hörnet spegelkompenserat
+      // 3) emoji (främst) – övre högra hörnet på rutan
       const emoji=EMO_EMOJI[emo]||"🙂"; const emSize=Math.max(28, Math.round(Math.min(bw,bh)*0.22));
       ctx.font=`${emSize}px serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
-      const emX = MIRROR ? (mirrorX(bx) ) : (rx + bw);
-      ctx.fillText(emoji, emX, by);
+      ctx.fillText(emoji, rx + bw, by);
 
       // 4) pepp (ovanpå allt, men inom rutan)
       ctx.textAlign='left'; ctx.textBaseline='alphabetic';
@@ -688,6 +698,11 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
   document.getElementById('mirrorX').addEventListener('change', e=>{
     MIRROR = e.target.checked;
     if (MIRROR) wrap.classList.add('mirror'); else wrap.classList.remove('mirror');
+  });
+
+  // Visa/dölj ansiktsruta
+  document.getElementById('showBox').addEventListener('change', e=>{
+    SHOW_FACE_BOX = e.target.checked;
   });
 
   const themeSel = document.getElementById('themeSel');
