@@ -513,6 +513,9 @@ async function tick(){
 
     const dets = await builder;
 
+    // --- GLADTID för denna frame ackumuleras här ---
+    let frameHappyAdd = 0;
+
     ctx.clearRect(0,0,overlay.width,overlay.height);
 
     for (const det of dets){
@@ -541,6 +544,26 @@ async function tick(){
       // emotion/age
       const exp=det.expressions||{}; let emo=null, conf=0; for(const [k,v] of Object.entries(exp)) if(v>conf){ emo=k; conf=v; }
       const shownAge = getSmoothedAge(tr, now, det.age ?? null);
+
+      // --- Glad-bidrag m. warmup ---
+      if (emo === 'happy' && conf >= EMO_CONF_MIN) {
+        tr.warm = Math.min(HAPPY_WARMUP_SECONDS, (tr.warm || 0) + dt);
+        if (tr.warm >= HAPPY_WARMUP_SECONDS) {
+          if (!tr.contributing) {
+            // första gången denna person räknas -> bumpa besökslogg
+            const key=todayKey();
+            visitorsByDay[key]=(visitorsByDay[key]||0)+1;
+            localStorage.setItem('moodcam.visitors', JSON.stringify(visitorsByDay));
+            updateLogInfo();
+          }
+          tr.contributing = true;
+          const weight = CONTRIB_WEIGHT_BY_CONF ? conf : 1;
+          frameHappyAdd += dt * weight;
+        }
+      } else {
+        tr.warm = Math.max(0, (tr.warm || 0) - dt * 0.5);
+        tr.contributing = false;
+      }
 
       // pose (landmarks)
       if (det.landmarks){
@@ -603,6 +626,9 @@ async function tick(){
       // 4) pepp (ovanpå allt, men inom rutan)
       if (peppEnabled){ if(!tr.peppText) tr.peppText = randomPepp(); drawCenteredBottom(x,y,w,h,tr.peppText); }
     }
+
+    // lägg till gladsekunder denna frame (summa av alla glada personer)
+    HAPPY_PERSON_SECONDS += frameHappyAdd;
 
     // städa
     const tnow=performance.now(); for(let i=tracks.length-1;i>=0;i--) if(tnow-tracks[i].last>1500) tracks.splice(i,1);
