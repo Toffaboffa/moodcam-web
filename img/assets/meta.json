@@ -33,8 +33,8 @@
   "assets/hats/sommar.png":    { "fit": "hat", "wFactor": 2.2, "yOffset": 0.08, "xOffset": 0.06,  "rot": true },
   "assets/hats/tomteluva.png": { "fit": "hat", "wFactor": 2.1, "yOffset": -0.05, "xOffset": 0.2,  "rot": true },
 
-  "assets/facial_hair/beard1.png": { "fit": "beard", "wFactor": 0.2, "yOffset": 0.10, "xOffset": 0.00, "rot": true },
-  "assets/facial_hair/musta1.png": { "fit": "mouth", "wFactor": 0.20, "yOffset": 0.50, "xOffset": 0.00, "rot": true },
-  "assets/facial_hair/musta2.png": { "fit": "mouth", "wFactor": 0.20, "yOffset": 0.20, "xOffset": 0.00, "rot": true },
-  "assets/facial_hair/musta3.png": { "fit": "mouth", "wFactor": 0.20, "yOffset": 0.20, "xOffset": 0.00, "rot": true }
+  "assets/facial_hair/beard1.png": { "fit": "beard", "wFactor": 1.2, "yOffset": 0.20, "xOffset": 0.00, "rot": true },
+  "assets/facial_hair/musta1.png": { "fit": "mouth", "wFactor": 1.20, "yOffset": 0.50, "xOffset": 0.00, "rot": true },
+  "assets/facial_hair/musta2.png": { "fit": "mouth", "wFactor": 1.20, "yOffset": 0.20, "xOffset": 0.00, "rot": true },
+  "assets/facial_hair/musta3.png": { "fit": "mouth", "wFactor": 1.20, "yOffset": 0.20, "xOffset": 0.00, "rot": true }
 }
