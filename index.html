@@ -217,7 +217,7 @@ const RESET_H = 19, RESET_M = 30;
 
 /* Jitter-filter */
 const POSE_ALPHA = 0.15;
-const BBOX_ALPHA = 0.05;
+const BBOX_ALPHA = 0.25;
 const ema = (prev, next, a)=> (prev==null? next : prev + a*(next - prev));
 
 /* Spegeltillstånd */
