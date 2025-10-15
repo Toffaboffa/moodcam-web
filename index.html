@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Vialundskolans MoodCam (v.1.2.1)</title>
+  <title>Vialundskolans MoodCam (v.1.2.2)</title>
   <link rel="icon" href="data:,">
 <style>
   :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
@@ -47,9 +47,9 @@
   .two-col{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center}
   .hud{position:fixed;left:14px;bottom:14px;font-size:12px;opacity:.7}
 </style>
-  <!-- Cache-bust -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.21.0/dist/tf.min.js?v=mc2"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js?v=mc2"></script>
+  <!-- Libs -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.21.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js"></script>
 </head>
 <body>
   <div class="topbar">
@@ -97,14 +97,10 @@
       <div class="row">
         <label for="peppCat">Kategori</label>
         <select id="peppCat" class="btn" style="width:220px">
-          <option value="all">Alla</option>
-          <option value="skola">Skola</option>
-          <option value="maende">Mående</option>
-          <option value="basta">Gör ditt bästa</option>
-          <option value="van">Vänskap</option>
+          <!-- Fylls dynamiskt från pepp.json -->
         </select>
       </div>
-      <p class="desc">Visas i varje ansiktsruta, låses per person tills de lämnar bild.</p>
+      <p class="desc">Visas i varje ansiktsruta, låses per person tills de lämnar bild. Kategorier och texter läses från <code>pepp.json</code>.</p>
     </details>
 
     <details>
@@ -121,7 +117,7 @@
       <div class="row"><label>Ögon</label><input type="checkbox" id="ovEyes" checked></div>
       <div class="row"><label>Munnar</label><input type="checkbox" id="ovMouth" checked></div>
       <div class="row"><label>Skägg</label><input type="checkbox" id="ovBeard" checked></div>
-      <div class="row"><label>Visa ansiktsruta</label><input type="checkbox" id="showBox" checked></div>
+      <div class="row"><label>Visa ansiktsruta</label><input type="checkbox" id="showBox"></div>
       <p class="desc">Tema anger *vilka filer*; passform kommer från <code>img/assets/meta.json</code>.</p>
     </details>
 
@@ -180,6 +176,9 @@ let DETECTOR_SIZE = 320;
 
 let peppEnabled = true;
 let peppCat = 'all';
+let PEPP = {};                 // <-- läses externt
+let PEPP_KEYS = [];            // kategorier (exkl. 'all' pseudo)
+
 const THEMES = ["Aktivt (img/manifest.json)","halloween","jul","sommar","skolstart","test"];
 let selectedTheme = THEMES[0];
 
@@ -226,8 +225,8 @@ const ema = (prev, next, a)=> (prev==null? next : prev + a*(next - prev));
 /* Spegeltillstånd */
 let MIRROR = false;
 
-/* Visa/dölj ansiktsruta */
-let SHOW_FACE_BOX = true;
+/* Visa/dölj ansiktsruta – default: osynlig */
+let SHOW_FACE_BOX = false;
 
 /* Logg */
 const visitorsByDay = JSON.parse(localStorage.getItem('moodcam.visitors') || '{}');
@@ -262,6 +261,56 @@ function getSmoothedAge(track, now, latestAge){
   if (now-track.created<AGE_SMOOTH_WINDOW_MS) return latestAge!=null?Math.round(latestAge):null;
   if (!track.ageHist.length) return latestAge!=null?Math.round(latestAge):null;
   const avg=track.ageHist.reduce((s,p)=>s+p.a,0)/track.ageHist.length; return Math.round(avg);
+}
+
+/* ---------- Pepp (extern) ---------- */
+async function loadPepp(){
+  try{
+    const r = await fetch('./pepp.json', {cache:'no-store'});
+    if(!r.ok) throw new Error('Kunde inte läsa pepp.json');
+    const data = await r.json();
+    // Validera format: { kategori: [str,...], ... }
+    const ok = Object.fromEntries(
+      Object.entries(data)
+        .filter(([k,v]) => Array.isArray(v))
+        .map(([k,v]) => [k, v.filter(x => typeof x === 'string')])
+    );
+    PEPP = ok;
+    PEPP_KEYS = Object.keys(PEPP);
+    populatePeppCategories();
+  }catch(e){
+    console.error('[MoodCam] pepp.json fel:', e);
+    // Fallback till tomma kategorier om filen saknas
+    PEPP = {};
+    PEPP_KEYS = [];
+    populatePeppCategories();
+  }
+}
+function populatePeppCategories(){
+  const sel = document.getElementById('peppCat');
+  sel.innerHTML = '';
+  // "all" först om det finns några kategorier
+  if (PEPP_KEYS.length){
+    const oAll=document.createElement('option'); oAll.value='all'; oAll.textContent='Alla'; sel.appendChild(oAll);
+  }
+  // Lägg till kategorier i alfabetisk ordning
+  PEPP_KEYS.sort().forEach(k=>{
+    const o=document.createElement('option'); o.value=k; o.textContent=k; sel.appendChild(o);
+  });
+  // Default-val
+  peppCat = (PEPP_KEYS.length ? 'all' : '');
+  sel.value = peppCat || (PEPP_KEYS[0] || '');
+}
+function randomPepp(){
+  if (!peppEnabled || !PEPP_KEYS.length) return '';
+  let pool = [];
+  if (peppCat === 'all' || !peppCat){
+    pool = PEPP_KEYS.flatMap(k => PEPP[k] || []);
+  } else {
+    pool = PEPP[peppCat] || [];
+  }
+  if (!pool.length) return '';
+  return pool[Math.floor(Math.random()*pool.length)];
 }
 
 /* --------- Overlays & teman --------- */
@@ -352,18 +401,6 @@ function defaultFitForFile(path){
   return 'bbox';
 }
 
-/* ---------- Pepp ---------- */
-const PEPP = {
-  skola: ["Kunskap = superkraft","Skriv lite till ✍️","Du lär dig nu!"],
-  maende: ["Ta en mikropaus 💧","Sträck på dig!","Ditt bästa räcker."],
-  basta: ["Gör ditt bästa – det räcker","Små steg ➜ stora resultat"],
-  van: ["Var snäll – det smittar 🤝","Le mot någon idag 🙂"]
-};
-function randomPepp(){
-  const pool = peppCat==='all' ? Object.values(PEPP).flat() : (PEPP[peppCat]||PEPP.all);
-  return pool[Math.floor(Math.random()*pool.length)];
-}
-
 /* --------- Landmark-only rendering --------- */
 function drawItem(meta, track, x,y,w,h){
   if(!meta) return;
@@ -376,7 +413,6 @@ function drawItem(meta, track, x,y,w,h){
   const flipX = !!cfg.flipX;
   const rotWithEyes = (cfg.rot !== false);
 
-  // Landmark-only: rita endast om pose är aktiv och giltig
   if (!track.usePose) return;
 
   const p = track.pose;
@@ -389,7 +425,6 @@ function drawItem(meta, track, x,y,w,h){
   const mouthW = p.mouthW || eyeD*0.9;
   const faceW  = p.faceW  || w;
 
-  // Kompensera för spegel: spegla X-koordinater och invertera vinkel
   if (MIRROR){
     eyeC = { x: overlay.width - eyeC.x, y: eyeC.y };
     mouthC = { x: overlay.width - mouthC.x, y: mouthC.y };
@@ -426,18 +461,10 @@ function drawItem(meta, track, x,y,w,h){
 function drawEffects(track,x,y,w,h){
   if(!overlaysEnabled || !track.effects) return;
   const e=track.effects;
-
-  // Ögon/glasögon (den som finns)
   if (e.eyes)  drawItem(e.eyes,  track, x,y,w,h);
   if (e.glass) drawItem(e.glass, track, x,y,w,h);
-
-  // Mun (bakom facial hair)
   if (e.mouth) drawItem(e.mouth, track, x,y,w,h);
-
-  // Facial hair ovanpå mun
   if (e.beard) drawItem(e.beard, track, x,y,w,h);
-
-  // Hatt högst upp
   if (e.hat)   drawItem(e.hat,   track, x,y,w,h);
 }
 
@@ -502,14 +529,6 @@ function ensureModelsLoading(){
   return modelsPromise;
 }
 
-/* ---------- ”Äcklad”-heuristik ---------- */
-function mouthAspectRatio(landmarks){
-  if(!landmarks) return 0;
-  const pts=landmarks.getMouth(), d=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
-  const top=pts[13], bot=pts[19], left=pts[0], right=pts[6];
-  return d(top,bot)/(d(left,right)+1e-6);
-}
-
 /* ---------- Huvudloop ---------- */
 async function tick(){
   try{
@@ -526,7 +545,6 @@ async function tick(){
 
     const dets = await builder;
 
-    // --- GLADTID för denna frame ackumuleras här ---
     let frameHappyAdd = 0;
 
     ctx.clearRect(0,0,overlay.width,overlay.height);
@@ -539,7 +557,6 @@ async function tick(){
       for(const t of tracks){ const i=iou(t.bbox,bbox); if(i>bestIoU){bestIoU=i; best=t;} }
       if(best && bestIoU>0.3){
         const pb=best.bbox;
-        // snabbare storleks-EMA
         best.bbox = pb
           ? [ema(pb[0], bbox[0], BBOX_POS_ALPHA),
              ema(pb[1], bbox[1], BBOX_POS_ALPHA),
@@ -563,7 +580,6 @@ async function tick(){
       if (emo === 'happy' && conf >= EMO_CONF_MIN) {
         tr.warm = Math.min(HAPPY_WARMUP_SECONDS, (tr.warm || 0) + dt);
         if (tr.warm >= HAPPY_WARMUP_SECONDS) {
-          // logga exakt en gång per track
           if (!tr.counted) {
             const key=todayKey();
             visitorsByDay[key]=(visitorsByDay[key]||0)+1;
@@ -620,11 +636,11 @@ async function tick(){
       }
 
       const [bx,by,bw,bh]=tr.bbox;
-      const rx = mirrorX(bx, bw); // ritat x (spegelkompenserat)
+      const rx = mirrorX(bx, bw);
       const color=EMO_COLOR[emo]||'#24ff78';
 
       /* --- RITA I RÄTT ORDNING --- */
-      // 1) overlays (bakom) – drawItem hanterar spegel
+      // 1) overlays (bakom)
       drawEffects(tr, bx,by,bw,bh);
 
       // 2) face box + etikett (framför)
@@ -636,14 +652,17 @@ async function tick(){
         drawLabel(rx,by,label);
       } else if(shownAge){ drawLabel(rx,by,`${shownAge} år`); }
 
-      // 3) emoji (främst) – övre högra hörnet på rutan
+      // 3) emoji (främst)
       const emoji=EMO_EMOJI[emo]||"🙂"; const emSize=Math.max(28, Math.round(Math.min(bw,bh)*0.22));
       ctx.font=`${emSize}px serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillText(emoji, rx + bw, by);
 
       // 4) pepp (ovanpå allt, men inom rutan)
       ctx.textAlign='left'; ctx.textBaseline='alphabetic';
-      if (peppEnabled){ if(!tr.peppText) tr.peppText = randomPepp(); drawCenteredBottom(rx,by,bw,bh,tr.peppText); }
+      if (peppEnabled){
+        if(!tr.peppText) tr.peppText = randomPepp();
+        if (tr.peppText) drawCenteredBottom(rx,by,bw,bh,tr.peppText);
+      }
     }
 
     // lägg till gladsekunder denna frame (summa av alla glada personer)
@@ -701,9 +720,9 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
   });
 
   // Visa/dölj ansiktsruta
-  document.getElementById('showBox').addEventListener('change', e=>{
-    SHOW_FACE_BOX = e.target.checked;
-  });
+  const showBoxEl = document.getElementById('showBox');
+  showBoxEl.checked = SHOW_FACE_BOX;
+  showBoxEl.addEventListener('change', e=>{ SHOW_FACE_BOX = e.target.checked; });
 
   const themeSel = document.getElementById('themeSel');
   THEMES.forEach(t=>{ const o=document.createElement('option'); o.value=t; o.textContent=t; themeSel.appendChild(o); });
@@ -732,6 +751,7 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
   goalInput.addEventListener('input', e=>{ METER_GOAL_SECONDS=parseInt(e.target.value,10); goalLabel.textContent=METER_GOAL_SECONDS; });
 
   await loadAssetMeta();
+  await loadPepp();           // <-- läs in pepp-kategorier & fraser
   listCams(1);
   ensureModelsLoading();
 
@@ -740,7 +760,10 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
     const sel=document.getElementById('camSel');
     const ok = await startCamera(sel.value); if (!ok) return;
 
-    new ResizeObserver(()=>{ overlay.width=video.videoWidth; overlay.height=video.videoHeight; overlay.style.width=video.clientWidth+'px'; overlay.style.height=video.clientHeight+'px'; }).observe(document.getElementById('wrap'));
+    new ResizeObserver(()=>{
+      overlay.width=video.videoWidth; overlay.height=video.videoHeight;
+      overlay.style.width=video.clientWidth+'px'; overlay.style.height=video.clientHeight+'px';
+    }).observe(document.getElementById('wrap'));
     console.info('[MoodCam] Kamera igång, startar loop…');
     requestAnimationFrame(tick);
     document.getElementById('start').disabled = true;
