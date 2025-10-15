@@ -16,13 +16,13 @@
   "assets/glasses/glasses7.png": { "fit": "glasses", "wFactor": 1.90, "yOffset": 0.04, "xOffset": 0.00, "rot": true },
 
   "assets/mouth/mouth1.png": { "fit": "mouth", "wFactor": 1.30, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
-  "assets/mouth/mouth2.png": { "fit": "mouth", "wFactor": 1.30, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
+  "assets/mouth/mouth2.png": { "fit": "mouth", "wFactor": 1.50, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
   "assets/mouth/mouth3.png": { "fit": "mouth", "wFactor": 1.30, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
-  "assets/mouth/mouth4.png": { "fit": "mouth", "wFactor": 1.30, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
+  "assets/mouth/mouth4.png": { "fit": "mouth", "wFactor": 1.50, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
   "assets/mouth/mouth5.png": { "fit": "mouth", "wFactor": 1.30, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
-  "assets/mouth/mouth6.png": { "fit": "mouth", "wFactor": 1.30, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
-  "assets/mouth/mouth7.png": { "fit": "mouth", "wFactor": 1.30, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
-  "assets/mouth/mouth8.png": { "fit": "mouth", "wFactor": 1.30, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
+  "assets/mouth/mouth6.png": { "fit": "mouth", "wFactor": 2.00, "yOffset": 2.00, "xOffset": 0.00, "rot": true },
+  "assets/mouth/mouth7.png": { "fit": "mouth", "wFactor": 1.50, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
+  "assets/mouth/mouth8.png": { "fit": "mouth", "wFactor": 1.50, "yOffset": 0.00, "xOffset": 0.00, "rot": true },
 
   "assets/hats/basker.png":    { "fit": "hat", "wFactor": 1.50, "yOffset": -0.15, "xOffset": 0.08, "rot": true },
   "assets/hats/cowboy.png":    { "fit": "hat", "wFactor": 2.1, "yOffset": -0.20, "xOffset": 0.00,  "rot": true },
