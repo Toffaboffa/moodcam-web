@@ -55,8 +55,8 @@
   <!-- WASM fallback (används om WebGL ej fungerar) -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@4.21.0/dist/tf-backend-wasm.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js"></script>
-  <!-- Person-segmentering för spök-komposit -->
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
+  <!-- Person-segmentering för spök-komposit (pinnad version) -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.167/selfie_segmentation.js"></script>
 </head>
 <body>
   <div class="topbar">
@@ -201,7 +201,12 @@
 <script>
 /* ---------- Konsolfilter ---------- */
 const ORIG_CONSOLE = { info: console.info, warn: console.warn, log: console.log };
-const NOISE_PATTERNS = [/already been set/i,/backend was already registered/i,/kernel .* already registered/i];
+const NOISE_PATTERNS = [
+  /already been set/i,
+  /backend was already registered/i,
+  /kernel .* already registered/i,
+  /Reusing existing backend factory/i
+];
 console.warn = (...a)=>{ const s=(a||[]).join(' '); if (NOISE_PATTERNS.some(r=>r.test(s))) return; ORIG_CONSOLE.warn.apply(console,a); };
 console.info = (...a)=>{ const s=(a||[]).join(' '); if (NOISE_PATTERNS.some(r=>r.test(s))) return; ORIG_CONSOLE.info.apply(console,a); };
 
@@ -568,7 +573,7 @@ const GHOST_CLIPS = [
 
 let seg=null, segReady=false, latestMask=null;
 let playingGhost=false, lastGhostTs=0;
-let minGapMs=120000; // minst 25s mellan triggers
+let minGapMs=120000; // minst 120s mellan triggers
 
 function modeToAvgSec(m){
   if (m==='rare') return 3600;
@@ -579,29 +584,30 @@ function modeToAvgSec(m){
 function setupSegmentation(){
   return new Promise((resolve) => {
     try {
-      // Hämta möjlig klass från globalen (olika mellan builds)
       const SegClass =
         (window.SelfieSegmentation && window.SelfieSegmentation.SelfieSegmentation) ||
         window.SelfieSegmentation;
 
       if (typeof SegClass !== 'function') {
         console.warn('[MoodCam] SelfieSegmentation saknas eller har oväntat API – kör utan bakgrundsmask.');
-        seg = null;
-        segReady = false;
-        latestMask = null;
-        return resolve(); // fail-soft: låt init fortsätta
+        seg = null; segReady = false; latestMask = null;
+        return resolve();
       }
 
       seg = new SegClass({
-        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`
+        locateFile: (file) =>
+          `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.167/${file}`
       });
 
-      // 0 = general, 1 = landscape close-up (passar människor nära kameran)
       seg.setOptions({ modelSelection: 1 });
 
+      if (typeof seg.initialize === 'function') {
+        // vissa builds har initialize(); vi provar men blockerar inte
+        seg.initialize().catch(()=>{});
+      }
+
       seg.onResults((res) => {
-        // res.segmentationMask är ett <canvas>
-        latestMask = res.segmentationMask || null;
+        latestMask = (res && res.segmentationMask) ? res.segmentationMask : null;
       });
 
       segReady = true;
@@ -609,11 +615,10 @@ function setupSegmentation(){
     } catch (e) {
       console.warn('[MoodCam] Kunde inte initiera SelfieSegmentation, kör utan mask:', e);
       seg = null; segReady = false; latestMask = null;
-      resolve(); // fail-soft
+      resolve();
     }
   });
 }
-
 
 function pickGhost(){ return GHOST_CLIPS[Math.floor(Math.random()*GHOST_CLIPS.length)]; }
 
@@ -660,9 +665,18 @@ function compositeFrame(){
   compCtx.drawImage(video, 0, 0, composite.width, composite.height);
   compCtx.globalAlpha = 1.0;
 
-  // 3) Personmask
-  if (segReady){
-    seg.send({ image: video }).catch(()=>{});
+  // 3) Personmask — throttla & fail-soft
+  if (segReady && seg) {
+    try {
+      if (!composite.__segToggle) composite.__segToggle = 0;
+      composite.__segToggle ^= 1;
+      if (!composite.__segToggle) {
+        seg.send({ image: video });
+      }
+    } catch (e) {
+      console.warn('[MoodCam] Segmentation fel – stänger av mask (fortsätter utan):', e);
+      segReady = false; seg = null; latestMask = null;
+    }
   }
 
   // 4) Rita person fullt opak där masken = person
