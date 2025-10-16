@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Vialundskolans MoodCam (v.1.2.2)</title>
+  <title>Vialundskolans MoodCam (v.1.3.0)</title>
   <link rel="icon" href="data:,">
 <style>
   :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
@@ -49,6 +49,8 @@
 </style>
   <!-- Libs -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.21.0/dist/tf.min.js"></script>
+  <!-- WASM fallback (används om WebGL ej fungerar) -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@4.21.0/dist/tf-backend-wasm.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js"></script>
 </head>
 <body>
@@ -176,8 +178,8 @@ let DETECTOR_SIZE = 320;
 
 let peppEnabled = true;
 let peppCat = 'all';
-let PEPP = {};                 // <-- läses externt
-let PEPP_KEYS = [];            // kategorier (exkl. 'all' pseudo)
+let PEPP = {};        // läses från pepp.json
+let PEPP_KEYS = [];
 
 const THEMES = ["Aktivt (img/manifest.json)","halloween","jul","sommar","skolstart","test"];
 let selectedTheme = THEMES[0];
@@ -217,9 +219,8 @@ const RESET_H = 19, RESET_M = 30;
 
 /* Jitter-filter */
 const POSE_ALPHA = 0.15;
-// Snabbare storleksrespons än positionsrespons
-const BBOX_POS_ALPHA  = 0.35;
-const BBOX_SIZE_ALPHA = 0.75;
+const BBOX_POS_ALPHA  = 0.65; // snabbare position
+const BBOX_SIZE_ALPHA = 0.85; // snabbare storlek
 const ema = (prev, next, a)=> (prev==null? next : prev + a*(next - prev));
 
 /* Spegeltillstånd */
@@ -227,6 +228,19 @@ let MIRROR = false;
 
 /* Visa/dölj ansiktsruta – default: osynlig */
 let SHOW_FACE_BOX = false;
+
+/* Begränsa per frame / adaptiv arbetstakt */
+const MAX_FACES = 4;
+const FRAME_OPTS = {
+  LANDMARK_EVERY: 2,      // uppdatera landmarks var 2:a frame
+  ATTR_EVERY: 2,          // expressions var 2:a frame
+  AGE_EVERY: 8,           // age/gender var 8:e frame
+  DRAW_OVERLAYS_EVERY: 2, // rita overlays var 2:a frame om många ansikten
+  ADAPTIVE_INPUT: false,  // sänk inputSize när många ansikten
+  MANY_FACES_THRESHOLD: 3,
+  LOW_INPUT_SIZE: 288
+};
+let FRAME_I = 0;
 
 /* Logg */
 const visitorsByDay = JSON.parse(localStorage.getItem('moodcam.visitors') || '{}');
@@ -248,6 +262,7 @@ function drawLabel(x,y,text){
   ctx.fillStyle='#fff'; ctx.fillText(text,x,y);
 }
 function drawCenteredBottom(x,y,w,h,text){
+  if (!text) return;
   ctx.font = `${UI.pepFontSize}px system-ui`; ctx.textAlign='left'; ctx.textBaseline='alphabetic';
   const pad=UI.pepPad, htxt=UI.pepFontSize*1.2, tw=ctx.measureText(text).width, cx=x+w/2-tw/2, cy=y+h-8;
   ctx.fillStyle='rgba(0,0,0,0.7)'; ctx.fillRect(cx-pad,cy-htxt-pad,tw+pad*2,htxt+pad*2);
@@ -269,7 +284,6 @@ async function loadPepp(){
     const r = await fetch('./pepp.json', {cache:'no-store'});
     if(!r.ok) throw new Error('Kunde inte läsa pepp.json');
     const data = await r.json();
-    // Validera format: { kategori: [str,...], ... }
     const ok = Object.fromEntries(
       Object.entries(data)
         .filter(([k,v]) => Array.isArray(v))
@@ -280,35 +294,27 @@ async function loadPepp(){
     populatePeppCategories();
   }catch(e){
     console.error('[MoodCam] pepp.json fel:', e);
-    // Fallback till tomma kategorier om filen saknas
-    PEPP = {};
-    PEPP_KEYS = [];
+    PEPP = {}; PEPP_KEYS = [];
     populatePeppCategories();
   }
 }
 function populatePeppCategories(){
   const sel = document.getElementById('peppCat');
   sel.innerHTML = '';
-  // "all" först om det finns några kategorier
   if (PEPP_KEYS.length){
     const oAll=document.createElement('option'); oAll.value='all'; oAll.textContent='Alla'; sel.appendChild(oAll);
   }
-  // Lägg till kategorier i alfabetisk ordning
   PEPP_KEYS.sort().forEach(k=>{
     const o=document.createElement('option'); o.value=k; o.textContent=k; sel.appendChild(o);
   });
-  // Default-val
   peppCat = (PEPP_KEYS.length ? 'all' : '');
   sel.value = peppCat || (PEPP_KEYS[0] || '');
 }
 function randomPepp(){
   if (!peppEnabled || !PEPP_KEYS.length) return '';
-  let pool = [];
-  if (peppCat === 'all' || !peppCat){
-    pool = PEPP_KEYS.flatMap(k => PEPP[k] || []);
-  } else {
-    pool = PEPP[peppCat] || [];
-  }
+  const pool = (peppCat === 'all' || !peppCat)
+    ? PEPP_KEYS.flatMap(k => PEPP[k] || [])
+    : (PEPP[peppCat] || []);
   if (!pool.length) return '';
   return pool[Math.floor(Math.random()*pool.length)];
 }
@@ -334,8 +340,19 @@ async function loadOverlayManifest(themeName){
       (data[cat]||[]).forEach(item=>{
         const path = `./img/${item.file}`;
         if(!imgCache.has(path)){
-          const im=new Image(); im.src=path; imgCache.set(path, im);
-          toLoad.push(im.decode?.() ?? new Promise(r=>{im.onload=r;im.onerror=r;}));
+          const im = new Image();
+          im.src = path;
+          imgCache.set(path, im); // fallback
+          const p = (im.decode?.() ?? new Promise(r=>{im.onload=r;im.onerror=r;}))
+            .then(async ()=>{
+              if ('createImageBitmap' in window) {
+                try {
+                  const bm = await createImageBitmap(im);
+                  imgCache.set(path, bm); // snabbare ritning
+                } catch {}
+              }
+            });
+          toLoad.push(p);
         }
       });
     }
@@ -377,7 +394,6 @@ function isValidPose(p, box){
   const ok = v => Number.isFinite(v);
   if (!ok(p.eyeCx)||!ok(p.eyeCy)||!ok(p.eyeD)) return false;
 
-  // Relativa pos inom ansiktsrutan
   const ex = p.eyeCx - x;
   const ey = p.eyeCy - y;
 
@@ -387,18 +403,9 @@ function isValidPose(p, box){
 
   if (ok(p.mouthW) && !(p.mouthW > minEyeD*0.6 && p.mouthW < w*1.2)) return false;
 
-  // Tillåt liten marginal utanför bbox
   if (!(ex >= -w*0.2 && ex <= w*1.2 && ey >= -h*0.2 && ey <= h*1.2)) return false;
 
   return true;
-}
-function defaultFitForFile(path){
-  if (path.startsWith('assets/glasses/'))     return 'glasses';
-  if (path.startsWith('assets/eyes/'))        return 'eyes';
-  if (path.startsWith('assets/mouth/'))       return 'mouth';
-  if (path.startsWith('assets/facial_hair/')) return 'beard';
-  if (path.startsWith('assets/hats/'))        return 'hat';
-  return 'bbox';
 }
 
 /* --------- Landmark-only rendering --------- */
@@ -406,6 +413,9 @@ function drawItem(meta, track, x,y,w,h){
   if(!meta) return;
   const path = `./img/${meta.file}`;
   const img = imgCache.get(path); if(!img) return;
+
+  const iw = (img.width || img.naturalWidth || 1);
+  const ih = (img.height || img.naturalHeight || 1);
 
   const mAsset = assetMeta[meta.file] || {};
   const cfg = { ...meta, ...mAsset };
@@ -440,7 +450,7 @@ function drawItem(meta, track, x,y,w,h){
 
   const wf = (cfg.wFactor ?? defWF);
   const drawW = refW * wf;
-  const drawH = drawW * (img.naturalHeight/img.naturalWidth);
+  const drawH = drawW * (ih/iw);
 
   const dx = (cfg.xOffset || defX) * refW;
   const dy = ((cfg.yOffset !== undefined ? cfg.yOffset : defY)) * refW;
@@ -457,6 +467,14 @@ function drawItem(meta, track, x,y,w,h){
     else ctx.drawImage(img, px, py, drawW, drawH);
   }
   ctx.restore();
+}
+function defaultFitForFile(path){
+  if (path.startsWith('assets/glasses/'))     return 'glasses';
+  if (path.startsWith('assets/eyes/'))        return 'eyes';
+  if (path.startsWith('assets/mouth/'))       return 'mouth';
+  if (path.startsWith('assets/facial_hair/')) return 'beard';
+  if (path.startsWith('assets/hats/'))        return 'hat';
+  return 'bbox';
 }
 function drawEffects(track,x,y,w,h){
   if(!overlaysEnabled || !track.effects) return;
@@ -529,25 +547,51 @@ function ensureModelsLoading(){
   return modelsPromise;
 }
 
-/* ---------- Huvudloop ---------- */
+/* ---------- Huvudloop (optimerad) ---------- */
 async function tick(){
   try{
     scheduleResetIfNeeded();
+    FRAME_I++;
 
     const now = performance.now();
     const dt = Math.min(0.1, (now - lastFrameTime)/1000); lastFrameTime = now;
 
+    if (FRAME_OPTS.ADAPTIVE_INPUT) {
+      if ((window.__lastFaceCount||0) >= FRAME_OPTS.MANY_FACES_THRESHOLD && DETECTOR_SIZE > FRAME_OPTS.LOW_INPUT_SIZE) {
+        DETECTOR_SIZE = FRAME_OPTS.LOW_INPUT_SIZE;
+        const isel = document.getElementById('inputSize'); if (isel) isel.value = DETECTOR_SIZE;
+      }
+    }
+
     const options = new faceapi.TinyFaceDetectorOptions({ inputSize: DETECTOR_SIZE, scoreThreshold: 0.6 });
 
-    let builder = faceapi.detectAllFaces(video, options);
-    if (LANDMARKS_AVAILABLE && typeof builder.withFaceLandmarks === 'function') builder = builder.withFaceLandmarks();
-    builder = builder.withFaceExpressions().withAgeAndGender();
+    const doLandmarks = LANDMARKS_AVAILABLE && (FRAME_I % FRAME_OPTS.LANDMARK_EVERY === 0 || overlaysEnabled);
+    const doAttrs     = (FRAME_I % FRAME_OPTS.ATTR_EVERY === 0);
+    const doAge       = doAttrs && (FRAME_I % FRAME_OPTS.AGE_EVERY === 0);
 
-    const dets = await builder;
+    tf.engine().startScope();
+    let builder = faceapi.detectAllFaces(video, options);
+    if (doLandmarks && typeof builder.withFaceLandmarks === 'function') builder = builder.withFaceLandmarks();
+    if (doAttrs)   builder = builder.withFaceExpressions();
+    if (doAge)     builder = builder.withAgeAndGender();
+
+    const detsFull = await builder;
+    tf.engine().endScope();
+    await tf.nextFrame();
+
+    const dets = detsFull
+      .slice()
+      .sort((a,b)=> (b.detection.box.width*b.detection.box.height) - (a.detection.box.width*a.detection.box.height))
+      .slice(0, MAX_FACES);
+
+    window.__lastFaceCount = dets.length;
 
     let frameHappyAdd = 0;
 
     ctx.clearRect(0,0,overlay.width,overlay.height);
+
+    const DRAW_OVERLAYS_NOW = (dets.length <= FRAME_OPTS.MANY_FACES_THRESHOLD) ||
+                              (FRAME_I % FRAME_OPTS.DRAW_OVERLAYS_EVERY === 0);
 
     for (const det of dets){
       const b = det.detection.box; const bbox=[b.x,b.y,b.width,b.height];
@@ -567,37 +611,13 @@ async function tick(){
       } else {
         const t={ id:nextId++, bbox, last:now, created:now, seenFrames:0, counted:false,
                   peppText:null, ageHist:[], warm:0, contributing:false, effects:null, pose:{},
-                  usePose:false, poseValid:0, poseInvalid:0 };
+                  usePose:false, poseValid:0, poseInvalid:0, emo:'neutral', emoConf:0, lastAge:null };
         tracks.push(t); if(overlaysEnabled) assignEffects(t);
       }
       const tr=(best && bestIoU>0.3)? best : tracks[tracks.length-1];
 
-      // emotion/age
-      const exp=det.expressions||{}; let emo=null, conf=0; for(const [k,v] of Object.entries(exp)) if(v>conf){ emo=k; conf=v; }
-      const shownAge = getSmoothedAge(tr, now, det.age ?? null);
-
-      // --- Glad-bidrag m. warmup ---
-      if (emo === 'happy' && conf >= EMO_CONF_MIN) {
-        tr.warm = Math.min(HAPPY_WARMUP_SECONDS, (tr.warm || 0) + dt);
-        if (tr.warm >= HAPPY_WARMUP_SECONDS) {
-          if (!tr.counted) {
-            const key=todayKey();
-            visitorsByDay[key]=(visitorsByDay[key]||0)+1;
-            localStorage.setItem('moodcam.visitors', JSON.stringify(visitorsByDay));
-            updateLogInfo();
-            tr.counted = true;
-          }
-          tr.contributing = true;
-          const weight = CONTRIB_WEIGHT_BY_CONF ? conf : 1;
-          frameHappyAdd += dt * weight;
-        }
-      } else {
-        tr.warm = Math.max(0, (tr.warm || 0) - dt * 0.5);
-        tr.contributing = false;
-      }
-
-      // pose (landmarks)
-      if (det.landmarks){
+      // Pose uppdateras bara när vi faktiskt hämtat landmarks
+      if (doLandmarks && det.landmarks){
         const lm = det.landmarks;
         const mean = pts => { const n=pts.length; const s=pts.reduce((a,p)=>({x:a.x+p.x,y:a.y+p.y}),{x:0,y:0}); return {x:s.x/n,y:s.y/n}; };
         const dist = (a,b)=> Math.hypot(a.x-b.x,a.y-b.y);
@@ -626,49 +646,73 @@ async function tick(){
         if (mouthC){ pz.mouthCx = ema(pz.mouthCx, mouthC.x, POSE_ALPHA); pz.mouthCy = ema(pz.mouthCy, mouthC.y, POSE_ALPHA); }
         if (mouthW!=null) pz.mouthW = ema(pz.mouthW, mouthW, POSE_ALPHA);
         if (faceW!=null)  pz.faceW  = ema(pz.faceW,  faceW,  POSE_ALPHA);
+
+        const validNow = isValidPose(tr.pose, {x:b.x, y:b.y, width:b.width, height:b.height});
+        if (validNow) { tr.poseValid++; tr.poseInvalid=0; if(!tr.usePose && tr.poseValid>=2) tr.usePose=true; }
+        else          { tr.poseInvalid++; tr.poseValid=0; if(tr.usePose && tr.poseInvalid>=6) tr.usePose=false; }
       }
 
-      // Landmark-only gate
-      {
-        const validNow = !!det.landmarks && isValidPose(tr.pose, {x:b.x, y:b.y, width:b.width, height:b.height});
-        if (validNow) { tr.poseValid++; tr.poseInvalid=0; if(!tr.usePose && tr.poseValid>=2) tr.usePose=true; }
-        else { tr.poseInvalid++; tr.poseValid=0; if(tr.usePose && tr.poseInvalid>=6) tr.usePose=false; }
+      // Känslor/ålder uppdateras glesare; cacha i track
+      let emo = tr.emo, conf = tr.emoConf;
+      if (doAttrs && det.expressions){
+        const exp=det.expressions||{};
+        emo=null; conf=0; for(const [k,v] of Object.entries(exp)) if(v>conf){ emo=k; conf=v; }
+        tr.emo = emo; tr.emoConf = conf;
+      }
+      const latestAge = doAge ? (det.age ?? null) : null;
+      if (latestAge != null) tr.lastAge = latestAge;
+      const shownAge = getSmoothedAge(tr, now, latestAge);
+
+      // --- Glad-bidrag m. warmup ---
+      if (emo === 'happy' && conf >= EMO_CONF_MIN) {
+        tr.warm = Math.min(HAPPY_WARMUP_SECONDS, (tr.warm || 0) + dt);
+        if (tr.warm >= HAPPY_WARMUP_SECONDS) {
+          if (!tr.counted) {
+            const key=todayKey();
+            visitorsByDay[key]=(visitorsByDay[key]||0)+1;
+            localStorage.setItem('moodcam.visitors', JSON.stringify(visitorsByDay));
+            updateLogInfo();
+            tr.counted = true;
+          }
+          tr.contributing = true;
+          const weight = CONTRIB_WEIGHT_BY_CONF ? conf : 1;
+          frameHappyAdd += dt * weight;
+        }
+      } else {
+        tr.warm = Math.max(0, (tr.warm || 0) - dt * 0.5);
+        tr.contributing = false;
       }
 
       const [bx,by,bw,bh]=tr.bbox;
       const rx = mirrorX(bx, bw);
       const color=EMO_COLOR[emo]||'#24ff78';
 
-      /* --- RITA I RÄTT ORDNING --- */
-      // 1) overlays (bakom)
-      drawEffects(tr, bx,by,bw,bh);
+      // 1) overlays (glesare vid många ansikten)
+      if (DRAW_OVERLAYS_NOW) drawEffects(tr, bx,by,bw,bh);
 
-      // 2) face box + etikett (framför)
-      if (SHOW_FACE_BOX) {
-        ctx.strokeStyle=color; ctx.lineWidth=UI.faceBoxWidth; ctx.strokeRect(rx,by,bw,bh);
-      }
+      // 2) face box + etikett
+      if (SHOW_FACE_BOX) { ctx.strokeStyle=color; ctx.lineWidth=UI.faceBoxWidth; ctx.strokeRect(rx,by,bw,bh); }
       if(emo && conf>=EMO_CONF_MIN){
         const label=`${EMO_SV[emo]||emo} · ${Math.round(conf*100)}%` + (shownAge?` · ${shownAge} år`:'');
         drawLabel(rx,by,label);
       } else if(shownAge){ drawLabel(rx,by,`${shownAge} år`); }
 
-      // 3) emoji (främst)
+      // 3) emoji
       const emoji=EMO_EMOJI[emo]||"🙂"; const emSize=Math.max(28, Math.round(Math.min(bw,bh)*0.22));
       ctx.font=`${emSize}px serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillText(emoji, rx + bw, by);
 
-      // 4) pepp (ovanpå allt, men inom rutan)
-      ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+      // 4) pepp
       if (peppEnabled){
         if(!tr.peppText) tr.peppText = randomPepp();
-        if (tr.peppText) drawCenteredBottom(rx,by,bw,bh,tr.peppText);
+        drawCenteredBottom(rx,by,bw,bh,tr.peppText);
       }
     }
 
-    // lägg till gladsekunder denna frame (summa av alla glada personer)
+    // gladtid
     HAPPY_PERSON_SECONDS += frameHappyAdd;
 
-    // städa
+    // städa spår
     const tnow=performance.now(); for(let i=tracks.length-1;i>=0;i--) if(tnow-tracks[i].last>1500) tracks.splice(i,1);
 
     // mätare
@@ -689,6 +733,15 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
 /* ---------- Init ---------- */
 (async function init(){
   console.info('[MoodCam] Init… TFJS:', (tf && tf.version_core)||'n/a', 'face-api:', (faceapi && faceapi.version)||'n/a');
+
+  // Backend: försök GPU/WebGL först, sedan WASM
+  try {
+    await tf.setBackend('webgl'); await tf.ready();
+    console.info('[MoodCam] TF backend:', tf.getBackend());
+  } catch(e) {
+    console.warn('[MoodCam] WebGL misslyckades, provar WASM:', e);
+    try { await tf.setBackend('wasm'); await tf.ready(); console.info('[MoodCam] TF backend:', tf.getBackend()); } catch(e2){ console.warn('[MoodCam] WASM misslyckades också:', e2); }
+  }
 
   const wrap=document.getElementById('wrap');
   video=document.getElementById('video'); overlay=document.getElementById('overlay'); ctx=overlay.getContext('2d');
@@ -751,7 +804,7 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
   goalInput.addEventListener('input', e=>{ METER_GOAL_SECONDS=parseInt(e.target.value,10); goalLabel.textContent=METER_GOAL_SECONDS; });
 
   await loadAssetMeta();
-  await loadPepp();           // <-- läs in pepp-kategorier & fraser
+  await loadPepp();
   listCams(1);
   ensureModelsLoading();
 
