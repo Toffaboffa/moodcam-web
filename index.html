@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Vialundskolans MoodCam (v.1.3.0)</title>
+  <title>Vialundskolans MoodCam (v.1.3.1)</title>
   <link rel="icon" href="data:,">
 <style>
   :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
@@ -241,6 +241,10 @@ const FRAME_OPTS = {
   LOW_INPUT_SIZE: 288
 };
 let FRAME_I = 0;
+
+/* Anti-blink / hysteresis när det inte hittas ansikten */
+const EMPTY_HYST_MS = 300;    // behåll senaste ritning i upp till 300 ms
+let lastNonEmptyTs = 0;       // senaste ts då minst ett ansikte fanns
 
 /* Logg */
 const visitorsByDay = JSON.parse(localStorage.getItem('moodcam.visitors') || '{}');
@@ -547,7 +551,7 @@ function ensureModelsLoading(){
   return modelsPromise;
 }
 
-/* ---------- Huvudloop (optimerad) ---------- */
+/* ---------- Huvudloop (optimerad + anti-blink) ---------- */
 async function tick(){
   try{
     scheduleResetIfNeeded();
@@ -563,7 +567,7 @@ async function tick(){
       }
     }
 
-    const options = new faceapi.TinyFaceDetectorOptions({ inputSize: DETECTOR_SIZE, scoreThreshold: 0.6 });
+    const options = new faceapi.TinyFaceDetectorOptions({ inputSize: DETECTOR_SIZE, scoreThreshold: 0.65 });
 
     const doLandmarks = LANDMARKS_AVAILABLE && (FRAME_I % FRAME_OPTS.LANDMARK_EVERY === 0 || overlaysEnabled);
     const doAttrs     = (FRAME_I % FRAME_OPTS.ATTR_EVERY === 0);
@@ -583,6 +587,8 @@ async function tick(){
       .slice()
       .sort((a,b)=> (b.detection.box.width*b.detection.box.height) - (a.detection.box.width*a.detection.box.height))
       .slice(0, MAX_FACES);
+
+    if (dets.length > 0) lastNonEmptyTs = now; // anti-blink: uppdatera senaste "icke-tom"
 
     window.__lastFaceCount = dets.length;
 
@@ -616,7 +622,7 @@ async function tick(){
       }
       const tr=(best && bestIoU>0.3)? best : tracks[tracks.length-1];
 
-      // Pose uppdateras bara när vi faktiskt hämtat landmarks
+      // Pose – uppdatera endast när vi har landmarks
       if (doLandmarks && det.landmarks){
         const lm = det.landmarks;
         const mean = pts => { const n=pts.length; const s=pts.reduce((a,p)=>({x:a.x+p.x,y:a.y+p.y}),{x:0,y:0}); return {x:s.x/n,y:s.y/n}; };
@@ -652,7 +658,7 @@ async function tick(){
         else          { tr.poseInvalid++; tr.poseValid=0; if(tr.usePose && tr.poseInvalid>=6) tr.usePose=false; }
       }
 
-      // Känslor/ålder uppdateras glesare; cacha i track
+      // Känslor/ålder (glesare); cacha i track
       let emo = tr.emo, conf = tr.emoConf;
       if (doAttrs && det.expressions){
         const exp=det.expressions||{};
@@ -706,6 +712,46 @@ async function tick(){
       if (peppEnabled){
         if(!tr.peppText) tr.peppText = randomPepp();
         drawCenteredBottom(rx,by,bw,bh,tr.peppText);
+      }
+    }
+
+    // --- Anti-blink: om denna frame saknar ansikten, rita kvarvarande spår en kort stund med fade ---
+    if (dets.length === 0) {
+      const remain = EMPTY_HYST_MS - (now - lastNonEmptyTs);
+      if (remain > 0) {
+        const alpha = Math.max(0, Math.min(1, remain / EMPTY_HYST_MS));
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        for (const tr of tracks) {
+          if ((now - tr.last) <= EMPTY_HYST_MS) {
+            const [bx,by,bw,bh] = tr.bbox;
+            const rx = mirrorX(bx, bw);
+            const emo = tr.emo ?? 'neutral';
+            const conf = tr.emoConf ?? 0;
+            const color = EMO_COLOR[emo] || '#24ff78';
+
+            // Overlays (kan ritas även här)
+            drawEffects(tr, bx,by,bw,bh);
+
+            // Face box + etikett (respektera togglen)
+            if (SHOW_FACE_BOX) { ctx.strokeStyle=color; ctx.lineWidth=UI.faceBoxWidth; ctx.strokeRect(rx,by,bw,bh); }
+            if (emo && conf >= EMO_CONF_MIN) {
+              const shownAge = getSmoothedAge(tr, now, null);
+              const label = `${EMO_SV[emo]||emo} · ${Math.round(conf*100)}%` + (shownAge?` · ${shownAge} år`:'');
+              drawLabel(rx,by,label);
+            }
+
+            // Emoji
+            const emoji = EMO_EMOJI[emo] || "🙂";
+            const emSize = Math.max(28, Math.round(Math.min(bw,bh)*0.22));
+            ctx.font=`${emSize}px serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
+            ctx.fillText(emoji, rx + bw, by);
+
+            // Pepp
+            if (peppEnabled) drawCenteredBottom(rx,by,bw,bh, tr.peppText || '');
+          }
+        }
+        ctx.restore();
       }
     }
 
