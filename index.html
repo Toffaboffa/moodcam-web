@@ -179,7 +179,7 @@ const UI = { labelFontSize:14, labelPad:4, pepFontSize:14, pepPad:4, faceBoxWidt
 
 let EMO_CONF_MIN = 0.40;
 let DETECTOR_SIZE = 320;
-let DETECTOR_SCORE = 0.70;
+let DETECTOR_SCORE = 0.60;
 
 let peppEnabled = true;
 let peppCat = 'all';
@@ -595,7 +595,7 @@ async function tick(){
       }
     }
 
-    /* ---- icke-blockerande detektionssteg ---- */
+    // 1) Icke-blockerande detektering
     if (!detectInFlight && (now - lastDetectTs) >= DETECT_EVERY_MS) {
       detectInFlight = true;
       (async () => {
@@ -629,133 +629,132 @@ async function tick(){
     }
 
     const dets = latestDets;
-    if (dets.length > 0) lastNonEmptyTs = now;
+    const hadDets = dets.length > 0;
+    if (hadDets) lastNonEmptyTs = now;
     window.__lastFaceCount = dets.length;
+
+    // 2) Rensa canvas bara när vi faktiskt behöver
+    const shouldClear = hadDets || (now - lastNonEmptyTs > EMPTY_HYST_MS);
+    if (shouldClear) ctx.clearRect(0,0,overlay.width,overlay.height);
 
     let frameHappyAdd = 0;
 
-    ctx.clearRect(0,0,overlay.width,overlay.height);
+    // Rita overlays varje frame (ingen “varannanfems-ryckighet”)
+    const DRAW_OVERLAYS_NOW = true;
 
-    const DRAW_OVERLAYS_NOW = (dets.length <= FRAME_OPTS.MANY_FACES_THRESHOLD) ||
-                              (FRAME_I % FRAME_OPTS.DRAW_OVERLAYS_EVERY === 0);
+    // 3) Matcha/uppdatera spår ENDAST om vi har färska dets
+    if (hadDets){
+      for (const det of dets){
+        const b = det.detection.box; const bbox=[b.x,b.y,b.width,b.height];
 
-    for (const det of dets){
-      const b = det.detection.box; const bbox=[b.x,b.y,b.width,b.height];
-
-      // matchning + smoothing (stabilare poäng)
-      let best=null, bestScore=0;
-      for(const t of tracks){
-        const s = matchScore(t.bbox,bbox);
-        if (s>bestScore){ bestScore=s; best=t; }
-      }
-
-      if(best && bestScore>0.35){
-        // beräkna hastighet före uppdatering
-        const prev = best.bbox.slice();
-        const dtSec = Math.max(0.001, (now - (best._lastUpdateTs || now)) / 1000);
-
-        const pbx=prev[0], pby=prev[1], pbw=prev[2], pbh=prev[3];
-        const pcx = pbx + pbw/2, pcy = pby + pbh/2;
-        const ncx = bbox[0] + bbox[2]/2, ncy = bbox[1] + bbox[3]/2;
-
-        const vx = (ncx - pcx) / dtSec;
-        const vy = (ncy - pcy) / dtSec;
-
-        const VEL_ALPHA = 0.4;
-        best.vx = (best.vx ?? 0) * (1 - VEL_ALPHA) + vx * VEL_ALPHA;
-        best.vy = (best.vy ?? 0) * (1 - VEL_ALPHA) + vy * VEL_ALPHA;
-
-        // uppdatera bbox med smoothing
-        best.bbox = [
-          ema(prev[0], bbox[0], BBOX_POS_ALPHA),
-          ema(prev[1], bbox[1], BBOX_POS_ALPHA),
-          ema(prev[2], bbox[2], BBOX_SIZE_ALPHA),
-          ema(prev[3], bbox[3], BBOX_SIZE_ALPHA)
-        ];
-        best.last=now;
-        best._lastUpdateTs = now;
-      } else {
-        const t={ id:nextId++, bbox:bbox.slice(), last:now, created:now, seenFrames:0, counted:false,
-                  peppText:null, ageHist:[], warm:0, contributing:false, effects:null, pose:{},
-                  usePose:false, poseValid:0, poseInvalid:0, emo:'neutral', emoConf:0, lastAge:null,
-                  vx:0, vy:0, _lastUpdateTs: now };
-        tracks.push(t); if(overlaysEnabled) assignEffects(t);
-        best = t;
-      }
-      const tr=best;
-
-      // Pose – uppdatera endast när vi har landmarks
-      if (det.landmarks){
-        const lm = det.landmarks;
-        const mean = pts => { const n=pts.length; const s=pts.reduce((a,p)=>({x:a.x+p.x,y:a.y+p.y}),{x:0,y:0}); return {x:s.x/n,y:s.y/n}; };
-        const dist = (a,b)=> Math.hypot(a.x-b.x,a.y-b.y);
-        const mid  = (a,b)=> ({x:(a.x+b.x)/2, y:(a.y+b.y)/2});
-
-        const Leye = mean(lm.getLeftEye());
-        const Reye = mean(lm.getRightEye());
-        const eyeC = mid(Leye, Reye);
-        const eyeD = dist(Leye, Reye);
-        const angle= Math.atan2(Reye.y - Leye.y, Reye.x - Leye.x);
-
-        const mouth = lm.getMouth?.();
-        const mL = mouth ? mouth[0] : null;
-        const mR = mouth ? mouth[6] : null;
-        const mouthC = (mL && mR) ? mid(mL, mR) : null;
-        const mouthW = (mL && mR) ? dist(mL, mR) : null;
-
-        const jaw = lm.getJawOutline?.();
-        const faceW = jaw ? dist(jaw[0], jaw[16]) : null;
-
-        const pz = tr.pose;
-        pz.eyeCx   = ema(pz.eyeCx,   eyeC.x, POSE_ALPHA);
-        pz.eyeCy   = ema(pz.eyeCy,   eyeC.y, POSE_ALPHA);
-        pz.eyeD    = ema(pz.eyeD,    eyeD,   POSE_ALPHA);
-        pz.angle   = ema(pz.angle,   angle,  POSE_ALPHA);
-        if (mouthC){ pz.mouthCx = ema(pz.mouthCx, mouthC.x, POSE_ALPHA); pz.mouthCy = ema(pz.mouthCy, mouthC.y, POSE_ALPHA); }
-        if (mouthW!=null) pz.mouthW = ema(pz.mouthW, mouthW, POSE_ALPHA);
-        if (faceW!=null)  pz.faceW  = ema(pz.faceW,  faceW,  POSE_ALPHA);
-
-        const validNow = isValidPose(tr.pose, {x:tr.bbox[0], y:tr.bbox[1], width:tr.bbox[2], height:tr.bbox[3]});
-        if (validNow) { tr.poseValid++; tr.poseInvalid=0; if(!tr.usePose && tr.poseValid>=2) tr.usePose=true; }
-        else          { tr.poseInvalid++; tr.poseValid=0; if(tr.usePose && tr.poseInvalid>=6) tr.usePose=false; }
-      }
-
-      // Känslor/ålder (om med i latestDets)
-      if (det.expressions){
-        const exp=det.expressions||{};
-        let emo=null, conf=0; for(const [k,v] of Object.entries(exp)) if(v>conf){ emo=k; conf=v; }
-        tr.emo = emo; tr.emoConf = conf;
-      }
-      const latestAge = ('age' in det) ? (det.age ?? null) : null;
-      if (latestAge != null) tr.lastAge = latestAge;
-      const shownAge = getSmoothedAge(tr, now, latestAge);
-
-      // --- Glad-bidrag m. warmup ---
-      if (tr.emo === 'happy' && (tr.emoConf ?? 0) >= EMO_CONF_MIN) {
-        tr.warm = Math.min(HAPPY_WARMUP_SECONDS, (tr.warm || 0) + dt);
-        if (tr.warm >= HAPPY_WARMUP_SECONDS) {
-          if (!tr.counted) {
-            const key=todayKey();
-            visitorsByDay[key]=(visitorsByDay[key]||0)+1;
-            localStorage.setItem('moodcam.visitors', JSON.stringify(visitorsByDay));
-            updateLogInfo();
-            tr.counted = true;
-          }
-          tr.contributing = true;
-          const weight = CONTRIB_WEIGHT_BY_CONF ? tr.emoConf : 1;
-          frameHappyAdd += dt * weight;
+        // stabil matchning
+        let best=null, bestScore=0;
+        for(const t of tracks){
+          const s = matchScore(t.bbox,bbox);
+          if (s>bestScore){ bestScore=s; best=t; }
         }
-      } else {
-        tr.warm = Math.max(0, (tr.warm || 0) - dt * 0.5);
-        tr.contributing = false;
+
+        if(best && bestScore>0.35){
+          // uppdatera hastighet
+          const prev = best.bbox.slice();
+          const dtSec = Math.max(0.001, (now - (best._lastUpdateTs || now)) / 1000);
+          const pcx = prev[0] + prev[2]/2, pcy = prev[1] + prev[3]/2;
+          const ncx = bbox[0] + bbox[2]/2, ncy = bbox[1] + bbox[3]/2;
+          const vx = (ncx - pcx) / dtSec, vy = (ncy - pcy) / dtSec;
+          const VEL_ALPHA = 0.4;
+          best.vx = (best.vx ?? 0) * (1 - VEL_ALPHA) + vx * VEL_ALPHA;
+          best.vy = (best.vy ?? 0) * (1 - VEL_ALPHA) + vy * VEL_ALPHA;
+
+          // bbox-smoothing
+          best.bbox = [
+            ema(prev[0], bbox[0], BBOX_POS_ALPHA),
+            ema(prev[1], bbox[1], BBOX_POS_ALPHA),
+            ema(prev[2], bbox[2], BBOX_SIZE_ALPHA),
+            ema(prev[3], bbox[3], BBOX_SIZE_ALPHA)
+          ];
+          best.last=now;
+          best._lastUpdateTs = now;
+        } else {
+          const t={ id:nextId++, bbox:bbox.slice(), last:now, created:now, seenFrames:0, counted:false,
+                    peppText:null, ageHist:[], warm:0, contributing:false, effects:null, pose:{},
+                    usePose:false, poseValid:0, poseInvalid:0, emo:'neutral', emoConf:0, lastAge:null,
+                    vx:0, vy:0, _lastUpdateTs: now };
+          tracks.push(t); if(overlaysEnabled) assignEffects(t);
+          best = t;
+        }
+        const tr=best;
+
+        // uppdatera pose/emo/age bara när vi har data i denna batch
+        if (det.landmarks){
+          const lm = det.landmarks;
+          const mean = pts => { const n=pts.length; const s=pts.reduce((a,p)=>({x:a.x+p.x,y:a.y+p.y}),{x:0,y:0}); return {x:s.x/n,y:s.y/n}; };
+          const dist = (a,b)=> Math.hypot(a.x-b.x,a.y-b.y);
+          const mid  = (a,b)=> ({x:(a.x+b.x)/2, y:(a.y+b.y)/2});
+
+          const Leye = mean(lm.getLeftEye());
+          const Reye = mean(lm.getRightEye());
+          const eyeC = mid(Leye, Reye);
+          const eyeD = dist(Leye, Reye);
+          const angle= Math.atan2(Reye.y - Leye.y, Reye.x - Leye.x);
+
+          const mouth = lm.getMouth?.();
+          const mL = mouth ? mouth[0] : null;
+          const mR = mouth ? mouth[6] : null;
+          const mouthC = (mL && mR) ? mid(mL, mR) : null;
+          const mouthW = (mL && mR) ? dist(mL, mR) : null;
+
+          const jaw = lm.getJawOutline?.();
+          const faceW = jaw ? dist(jaw[0], jaw[16]) : null;
+
+          const pz = tr.pose;
+          pz.eyeCx   = ema(pz.eyeCx,   eyeC.x, POSE_ALPHA);
+          pz.eyeCy   = ema(pz.eyeCy,   eyeC.y, POSE_ALPHA);
+          pz.eyeD    = ema(pz.eyeD,    eyeD,   POSE_ALPHA);
+          pz.angle   = ema(pz.angle,   angle,  POSE_ALPHA);
+          if (mouthC){ pz.mouthCx = ema(pz.mouthCx, mouthC.x, POSE_ALPHA); pz.mouthCy = ema(pz.mouthCy, mouthC.y, POSE_ALPHA); }
+          if (mouthW!=null) pz.mouthW = ema(pz.mouthW, mouthW, POSE_ALPHA);
+          if (faceW!=null)  pz.faceW  = ema(pz.faceW,  faceW,  POSE_ALPHA);
+
+          const validNow = isValidPose(tr.pose, {x:tr.bbox[0], y:tr.bbox[1], width:tr.bbox[2], height:tr.bbox[3]});
+          if (validNow) { tr.poseValid++; tr.poseInvalid=0; if(!tr.usePose && tr.poseValid>=2) tr.usePose=true; }
+          else          { tr.poseInvalid++; tr.poseValid=0; if(tr.usePose && tr.poseInvalid>=6) tr.usePose=false; }
+        }
+
+        if (det.expressions){
+          const exp=det.expressions||{};
+          let emo=null, conf=0; for(const [k,v] of Object.entries(exp)) if(v>conf){ emo=k; conf=v; }
+          tr.emo = emo; tr.emoConf = conf;
+        }
+        const latestAge = ('age' in det) ? (det.age ?? null) : null;
+        if (latestAge != null) tr.lastAge = latestAge;
+
+        // glad-tid
+        if (tr.emo === 'happy' && (tr.emoConf ?? 0) >= EMO_CONF_MIN) {
+          tr.warm = Math.min(HAPPY_WARMUP_SECONDS, (tr.warm || 0) + dt);
+          if (tr.warm >= HAPPY_WARMUP_SECONDS) {
+            if (!tr.counted) {
+              const key=todayKey();
+              visitorsByDay[key]=(visitorsByDay[key]||0)+1;
+              localStorage.setItem('moodcam.visitors', JSON.stringify(visitorsByDay));
+              updateLogInfo();
+              tr.counted = true;
+            }
+            tr.contributing = true;
+            const weight = CONTRIB_WEIGHT_BY_CONF ? tr.emoConf : 1;
+            frameHappyAdd += dt * weight;
+          }
+        } else {
+          tr.warm = Math.max(0, (tr.warm || 0) - dt * 0.5);
+          tr.contributing = false;
+        }
       }
     }
 
-    // Rita alla spår (använder även extrapolering om ingen färsk träff)
+    // 4) Rita alltid – men extrapolera bara när vi hade färska dets
+    const allowExtrap = hadDets;
     for (const tr of tracks){
-      // extrapolera position om senaste uppdatering är gammal
       const ageMs = now - (tr._lastUpdateTs || tr.last || now);
-      if (ageMs > 0 && ageMs < 1000){
+      if (allowExtrap && ageMs > 0 && ageMs < 1000){
         const dtp = ageMs / 1000;
         const MAX_SHIFT = Math.min(80, Math.max(20, Math.min(overlay.width, overlay.height) * 0.06));
         const dx = Math.max(-MAX_SHIFT, Math.min(MAX_SHIFT, (tr.vx||0) * dtp));
@@ -788,40 +787,7 @@ async function tick(){
       }
     }
 
-    // --- Anti-blink — håll kvar senaste ritning lite längre när tomt ---
-    if (latestDets.length === 0) {
-      const remain = EMPTY_HYST_MS - (now - lastNonEmptyTs);
-      if (remain > 0) {
-        const a = Math.max(0, Math.min(1, remain / EMPTY_HYST_MS));
-        const alpha = a*a;
-        ctx.save();
-        ctx.globalAlpha = alpha;
-        for (const tr of tracks) {
-          if ((now - tr.last) <= EMPTY_HYST_MS) {
-            const [bx,by,bw,bh] = tr.bbox;
-            const rx = mirrorX(bx, bw);
-            const emo = tr.emo ?? 'neutral';
-            const conf = tr.emoConf ?? 0;
-            const color = EMO_COLOR[emo] || '#24ff78';
-
-            drawEffects(tr, bx,by,bw,bh);
-            if (SHOW_FACE_BOX) { ctx.strokeStyle=color; ctx.lineWidth=UI.faceBoxWidth; ctx.strokeRect(rx,by,bw,bh); }
-            if (emo && conf >= EMO_CONF_MIN) {
-              const shownAge = getSmoothedAge(tr, now, null);
-              const label = `${EMO_SV[emo]||emo} · ${Math.round(conf*100)}%` + (shownAge?` · ${shownAge} år`:``);
-              drawLabel(rx,by,label);
-            }
-            const emoji = EMO_EMOJI[emo] || "🙂";
-            const emSize = Math.max(28, Math.round(Math.min(bw,bh)*0.22));
-            ctx.font=`${emSize}px serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
-            ctx.fillText(emoji, rx + bw, by);
-
-            if (peppEnabled) drawCenteredBottom(rx,by,bw,bh, tr.peppText || '');
-          }
-        }
-        ctx.restore();
-      }
-    }
+    // 5) Inga “fade when empty” längre — vi låter helt enkelt canvas ligga kvar oförändrad tills hysteresis är över.
 
     // gladtid
     HAPPY_PERSON_SECONDS += frameHappyAdd;
@@ -840,7 +806,6 @@ async function tick(){
   }
   scheduleNext();
 }
-
 /* ---------- Logg / CSV ---------- */
 function updateLogInfo(){ const list=Object.entries(visitorsByDay).sort(([a],[b])=>a.localeCompare(b)); const txt=list.length? list.map(([d,n])=>`${d}: ${n}`).join(' · ') : 'Ingen logg än.'; const el=document.getElementById('logInfo'); if(el) el.textContent=txt; }
 function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visitorsByDay)]; const csv=rows.map(r=>r.join(',')).join('\n'); const blob=new Blob([csv],{type:'text/csv'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='moodcam_visitors.csv'; a.click(); URL.revokeObjectURL(a.href); }
