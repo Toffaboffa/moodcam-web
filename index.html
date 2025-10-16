@@ -109,7 +109,7 @@
       <input id="score" type="range" min="0.40" max="0.80" step="0.01" value="0.60">
     </div>
 
-    <details open>
+    <details>
       <summary>Peppande one-liners</summary>
       <div class="row" style="margin-top:8px">
         <label>Aktivera</label><input type="checkbox" id="peppToggle" checked>
@@ -130,11 +130,11 @@
         <label for="themeSel">Tema</label>
         <select id="themeSel" class="btn" style="width:220px"></select>
       </div>
-      <div class="row"><label>Hattar</label><input type="checkbox" id="ovHats" checked></div>
+      <div class="row"><label>Hattar</label><input type="checkbox" id="ovHats"></div>
       <div class="row"><label>Glasögon</label><input type="checkbox" id="ovGlasses" checked></div>
-      <div class="row"><label>Ögon</label><input type="checkbox" id="ovEyes" checked></div>
-      <div class="row"><label>Munnar</label><input type="checkbox" id="ovMouth" checked></div>
-      <div class="row"><label>Skägg</label><input type="checkbox" id="ovBeard" checked></div>
+      <div class="row"><label>Ögon</label><input type="checkbox" id="ovEyes"></div>
+      <div class="row"><label>Munnar</label><input type="checkbox" id="ovMouth"></div>
+      <div class="row"><label>Skägg</label><input type="checkbox" id="ovBeard"></div>
       <div class="row"><label>Visa ansiktsruta</label><input type="checkbox" id="showBox"></div>
       <p class="desc">Tema anger *vilka filer*; passform kommer från <code>img/assets/meta.json</code>.</p>
     </details>
@@ -147,7 +147,7 @@
         <label for="fSaturate">Mättnad</label><input id="fSaturate"    type="range" min="0"  max="200" step="1" value="100">
         <label for="fHue">Ton (°)</label><input id="fHue"              type="range" min="-180" max="180" step="1" value="0">
         <label for="fTemp">Temperatur</label><input id="fTemp"         type="range" min="-50" max="50" step="1" value="0">
-        <label for="mirrorX">Spegelvänd bild</label><input id="mirrorX" type="checkbox">
+        <label for="mirrorX">Spegelvänd bild</label><input id="mirrorX" type="checkbox" checked>
       </div>
       <div class="row"><button id="filtersReset" class="btn">Återställ</button></div>
       <p class="desc">Påverkar bara visningen (inte detekteringen).</p>
@@ -162,15 +162,15 @@
       <p id="logInfo" class="small"></p>
     </details>
 
-    <details open>
-      <summary>Spöke (bakgrund)</summary>
+    <details>
+      <summary>Bakgrundseffekt</summary>
       <div class="row"><label>Aktivera</label><input type="checkbox" id="ghostToggle" checked></div>
       <div class="row">
         <label for="ghostMode">Frekvens</label>
         <select id="ghostMode" class="btn" style="width:220px">
-          <option value="rare">Sällan (≈3 min)</option>
-          <option value="sometimes" selected>Ibland (≈2 min)</option>
-          <option value="often">Ofta (≈1 min)</option>
+          <option value="rare">Sällan</option>
+          <option value="sometimes" selected>Ibland</option>
+          <option value="often">Ofta</option>
         </select>
       </div>
       <div class="row">
@@ -183,16 +183,16 @@
       <div class="row">
         <button id="ghostNow" class="btn">Spela spöke nu 👻</button>
       </div>
-      <p class="desc">Spelar korta klipp i bakgrunden (1–5s). Eleven/eleverna maskas ovanpå så de syns normalt.</p>
+      <p class="desc">Spelar korta klipp i bakgrunden. Förgrunden maskas ovanpå så personer syns normalt.</p>
     </details>
 
     <details>
       <summary>Moodmätare – mål</summary>
       <div class="row">
         <label for="goalSec">Mål (sekunder glad-tid)</label>
-        <input id="goalSec" type="range" min="300" max="3600" step="60" value="900">
+        <input id="goalSec" type="range" min="300" max="3600" step="60" value="300">
       </div>
-      <p class="small">Nuvarande mål: <span id="goalLabel">900</span> s</p>
+      <p class="small">Nuvarande mål: <span id="goalLabel">300</span> s</p>
     </details>
   </div>
 
@@ -252,7 +252,7 @@ let lastFrameTime = performance.now();
 
 /* Mood-meter */
 let HAPPY_PERSON_SECONDS = 0;
-let METER_GOAL_SECONDS = 900;
+let METER_GOAL_SECONDS = 300;
 let meterShown = 0;
 const METER_EASE = 0.07;
 const HAPPY_WARMUP_SECONDS = 3;
@@ -267,7 +267,7 @@ const BBOX_SIZE_ALPHA = 0.75;
 const ema = (prev, next, a)=> (prev==null? next : prev + a*(next - prev));
 
 /* Spegeltillstånd */
-let MIRROR = false;
+let MIRROR = true;
 
 /* Visa/dölj ansiktsruta – default: osynlig */
 let SHOW_FACE_BOX = false;
@@ -562,12 +562,12 @@ const GHOST_CLIPS = [
 
 let seg=null, segReady=false, latestMask=null;
 let playingGhost=false, lastGhostTs=0;
-let minGapMs=25000; // minst 25s mellan triggers
+let minGapMs=120000; // minst 25s mellan triggers
 
 function modeToAvgSec(m){
-  if (m==='rare') return 180;
-  if (m==='often') return 60;
-  return 120; // sometimes
+  if (m==='rare') return 3600;
+  if (m==='often') return 600;
+  return 1800; // sometimes
 }
 
 function setupSegmentation(){
