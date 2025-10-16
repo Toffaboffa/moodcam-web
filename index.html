@@ -249,11 +249,11 @@ const FRAME_OPTS = {
 let FRAME_I = 0;
 
 /* Anti-blink / hysteresis */
-const EMPTY_HYST_MS = 1000; // längre kvarhållning
+const EMPTY_HYST_MS = 1500; // längre kvarhållning
 let lastNonEmptyTs = 0;
 
 /* Spårlivslängd utan träff */
-const LOST_GRACE_MS = 2000;
+const LOST_GRACE_MS = 4000;
 
 /* Detektionsklocka (frikopplad) */
 let DETECT_EVERY_MS = 80;   // ~12.5 Hz detektering
