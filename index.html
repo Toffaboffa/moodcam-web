@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Vialundskolans MoodCam (v.1.3.2)</title>
+  <title>Vialundskolans MoodCam (v.1.3.3)</title>
   <link rel="icon" href="data:,">
 <style>
   :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
@@ -251,6 +251,11 @@ let FRAME_I = 0;
 const EMPTY_HYST_MS = 450;    // behåll senaste ritning i upp till 450 ms
 let lastNonEmptyTs = 0;       // senaste ts då minst ett ansikte fanns
 
+/* Logg */
+const visitorsByDay = JSON.parse(localStorage.getItem('moodcam.visitors') || '{}');
+updateLogInfo();
+const AGE_SMOOTH_WINDOW_MS = 10_000;
+
 /* ---------- Hjälp ---------- */
 function todayKey(){ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 function scheduleResetIfNeeded(){ const now=new Date(); const reset=new Date(); reset.setHours(RESET_H, RESET_M, 0, 0); if (Math.abs(now-reset)<1000){ HAPPY_PERSON_SECONDS=0; meterShown=0; } }
@@ -281,7 +286,6 @@ function getSmoothedAge(track, now, latestAge){
   if (!track.ageHist.length) return latestAge!=null?Math.round(latestAge):null;
   const avg=track.ageHist.reduce((s,p)=>s+p.a,0)/track.ageHist.length; return Math.round(avg);
 }
-const AGE_SMOOTH_WINDOW_MS = 10_000;
 
 /* ---------- Pepp (extern) ---------- */
 async function loadPepp(){
@@ -761,7 +765,6 @@ async function tick(){
     }
 
     // gladtid
-    let frameHappyAdd = 0; // (redan ackumulerad per person ovan)
     HAPPY_PERSON_SECONDS += frameHappyAdd;
 
     // städa spår
