@@ -21,7 +21,16 @@
 
   /* Ordning: composite (0) < overlay (1) < meter (2) */
   /* Vi visar kompositen, döljer råvideo */
-  #video{ display:none; width:100%; height:auto; position:relative; z-index:0; }
+  /* var: dolda råvideon, men låt den bestämma storlek */
+#video{
+  /* display:none;  <-- ta bort denna */
+  visibility: hidden;   /* döljer visuellt men behåller layout */
+  /* opacity: 0;        går också bra, men visibility räcker */
+  width: 100%;
+  height: auto;
+  position: relative;
+  z-index: 0;
+}
   #composite{ position:absolute; inset:0; width:100%; height:100%; z-index:0; }
   #overlay{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:1; }
 
@@ -314,12 +323,20 @@ function drawCenteredBottom(x,y,w,h,text){
   ctx.fillStyle='#fff'; ctx.fillText(text,cx,cy);
 }
 function syncOverlaySize(){
-  overlay.width = video.videoWidth; overlay.height = video.videoHeight;
-  overlay.style.width = video.clientWidth+'px'; overlay.style.height = video.clientHeight+'px';
-  composite.width = video.videoWidth; composite.height = video.videoHeight;
-  composite.style.width = video.clientWidth+'px'; composite.style.height = video.clientHeight+'px';
-}
+  // Pixelstorlek = videons faktiska pixlar
+  overlay.width  = video.videoWidth;
+  overlay.height = video.videoHeight;
+  composite.width  = video.videoWidth;
+  composite.height = video.videoHeight;
 
+  // CSS-storlek = hur stor ytan är på skärmen
+  const wrapEl = document.getElementById('wrap');
+  const rect = wrapEl.getBoundingClientRect();
+  overlay.style.width  = rect.width + 'px';
+  overlay.style.height = rect.height + 'px';
+  composite.style.width  = rect.width + 'px';
+  composite.style.height = rect.height + 'px';
+}
 /* Ålder-smoothing */
 function getSmoothedAge(track, now, latestAge){
   if (latestAge!=null && !Number.isNaN(latestAge)) track.ageHist.push({t:now,a:latestAge});
