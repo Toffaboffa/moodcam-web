@@ -635,11 +635,21 @@ async function playGhostOnce(){
   } catch (err) {
     playingGhost = false;
     console.error('[Ghost] play() fel', err);
+    return;
   }
-}
-  const end = () => { ghostEl.pause(); ghostEl.currentTime = 0; playingGhost = false; lastGhostTs = performance.now(); ghostEl.removeEventListener('ended', end); };
+
+  // ✅ flytta tillbaka 'ended'-hanteraren INUTI funktionen
+  const end = () => {
+    tag('Ghost','ended');
+    ghostEl.pause();
+    ghostEl.currentTime = 0;
+    playingGhost = false;
+    lastGhostTs = performance.now();
+    ghostEl.removeEventListener('ended', end);
+  };
   ghostEl.addEventListener('ended', end);
 }
+
 function maybeTriggerGhost(now){
   if (!ghostEnabled || !segReady) return;
   if (playingGhost) return;
@@ -656,17 +666,22 @@ function compositeFrame(){
 
   if (composite.width !== video.videoWidth || composite.height !== video.videoHeight){
     syncOverlaySize();
+    tag('Draw','resize', composite.width, composite.height);
   }
 
   compCtx.clearRect(0,0,composite.width,composite.height);
 
   // 1) Ghost
   if (!ghostEl.paused && !ghostEl.ended) {
+    every(30, ()=> tag('Draw','ghost ritas @', ghostEl.currentTime?.toFixed?.(2)));
     compCtx.drawImage(ghostEl, 0, 0, composite.width, composite.height);
+  } else {
+    every(90, ()=> tag('Draw','ghost inaktiv'));
   }
 
   // 2) Live bakgrund (semi-opak)
   compCtx.globalAlpha = ghostBgAlpha;
+  every(120, ()=> tag('Draw','bgAlpha=', ghostBgAlpha));
   compCtx.drawImage(video, 0, 0, composite.width, composite.height);
   compCtx.globalAlpha = 1.0;
 
@@ -965,12 +980,12 @@ async function init(){
   const ghostModeSel = document.getElementById('ghostMode');
   const ghostFacesOnlyEl = document.getElementById('ghostFacesOnly');
   const ghostBgAlphaEl = document.getElementById('ghostBgAlpha');
+
   ghostEl.addEventListener('loadeddata', ()=> tag('Ghost','loadeddata', ghostEl.videoWidth, ghostEl.videoHeight));
-ghostEl.addEventListener('play', ()=> tag('Ghost','play'));
-ghostEl.addEventListener('pause', ()=> tag('Ghost','pause'));
-ghostEl.addEventListener('ended', ()=> { tag('Ghost','ended'); });
-ghostEl.addEventListener('error', ()=> console.error('[Ghost] video error', ghostEl.error));
-document.getElementById('ghostNow').addEventListener('click', ()=> tag('Ghost','knapp: spela nu'));
+  ghostEl.addEventListener('play', ()=> tag('Ghost','play'));
+  ghostEl.addEventListener('pause', ()=> tag('Ghost','pause'));
+  ghostEl.addEventListener('error', ()=> console.error('[Ghost] video error', ghostEl.error));
+  document.getElementById('ghostNow').addEventListener('click', ()=> { tag('Ghost','knapp: spela nu'); playGhostOnce(); });
 
   // ⛔️ Startläge: av
   ghostEnabled = ghostToggle.checked;       // false
@@ -978,10 +993,10 @@ document.getElementById('ghostNow').addEventListener('click', ()=> tag('Ghost','
   ghostFacesOnly = ghostFacesOnlyEl.checked;
   ghostBgAlpha = parseInt(ghostBgAlphaEl.value,10)/100;
 
-  ghostToggle.addEventListener('change', e=>{ ghostEnabled = e.target.checked; });
-  ghostModeSel.addEventListener('change', e=>{ ghostMode = e.target.value; ghostAvgSec = modeToAvgSec(ghostMode); });
-  ghostFacesOnlyEl.addEventListener('change', e=>{ ghostFacesOnly = e.target.checked; });
-  ghostBgAlphaEl.addEventListener('input', e=>{ ghostBgAlpha = parseInt(e.target.value,10)/100; });
+  ghostToggle.addEventListener('change', e=>{ ghostEnabled = e.target.checked; tag('Ghost','enabled=', ghostEnabled); });
+  ghostModeSel.addEventListener('change', e=>{ ghostMode = e.target.value; ghostAvgSec = modeToAvgSec(ghostMode); tag('Ghost','mode=',ghostMode,'avgSec=',ghostAvgSec); });
+  ghostFacesOnlyEl.addEventListener('change', e=>{ ghostFacesOnly = e.target.checked; tag('Ghost','facesOnly=',ghostFacesOnly); });
+  ghostBgAlphaEl.addEventListener('input', e=>{ ghostBgAlpha = parseInt(e.target.value,10)/100; tag('Ghost','bgAlpha=',ghostBgAlpha); });
 
   await loadAssetMeta();
   await loadPepp();
@@ -999,6 +1014,7 @@ document.getElementById('ghostNow').addEventListener('click', ()=> tag('Ghost','
     console.info('[MoodCam] Kamera igång, startar loop…');
     requestAnimationFrame(tick);
     startGhostLoop();
+    tag('Init','kamera igång, loopar. video=', video.videoWidth, video.videoHeight);
     document.getElementById('start').disabled = true;
   });
 
