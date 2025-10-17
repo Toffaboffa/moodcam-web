@@ -55,7 +55,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.21.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@4.21.0/dist/tf-backend-wasm.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.167/selfie_segmentation.js"></script>
+  <script defer src="./vendor/mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
+
 </head>
 <body>
   <div class="topbar">
@@ -584,7 +585,7 @@ function setupSegmentation(){
 
       seg = new SegClass({
         locateFile: (file) =>
-          `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.167/${file}`
+          `./vendor/mediapipe/selfie_segmentation/${file}`
       });
 
       seg.setOptions({ modelSelection: 1 });
@@ -840,7 +841,7 @@ function updateLogInfo(){ const list=Object.entries(visitorsByDay).sort(([a],[b]
 function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visitorsByDay)]; const csv=rows.map(r=>r.join(',')).join('\n'); const blob=new Blob([csv],{type:'text/csv'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='moodcam_visitors.csv'; a.click(); URL.revokeObjectURL(a.href); }
 
 /* ---------- Init ---------- */
-(async function init(){
+async function init(){
   console.info('[MoodCam] Init… TFJS:', (tf && tf.version_core)||'n/a', 'face-api:', (faceapi && faceapi.version)||'n/a');
 
   // Backend
@@ -970,7 +971,8 @@ function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visito
   });
 
   window.addEventListener('error', (e)=> console.error('[MoodCam] window error:', e.error||e.message));
-})();
+}
+window.addEventListener('DOMContentLoaded', init);
 </script>
 </body>
 </html>
