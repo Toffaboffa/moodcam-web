@@ -797,13 +797,29 @@ function updateAndDrawPlusOnes(dt){
 
     ctx.save();
     ctx.globalAlpha = Math.max(0, Math.min(1, fade));
-    ctx.font = `${Math.round(26*scale)}px system-ui`;
-    ctx.textAlign='center'; ctx.textBaseline='middle';
-    // lätt "glow" för läsbarhet
-    ctx.shadowColor='rgba(0,0,0,0.6)'; ctx.shadowBlur=6; ctx.shadowOffsetX=0; ctx.shadowOffsetY=1;
-    ctx.fillStyle = '#ffffff';
+    
+    const size = Math.round(36 * scale);          // ↑ större (var 26)
+    ctx.font = `bold ${size}px system-ui`;         // ↑ fet stil
+    
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    // Lätt glow för läsbarhet
+    ctx.shadowColor = 'rgba(0,0,0,0.6)';
+    ctx.shadowBlur = 6;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 1;
+    
+    // Kontur som förstärker “fet”-känslan
+    ctx.lineWidth = Math.max(1, size * 0.08);
+    ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+    ctx.strokeText('+1', p.x, p.y);
+    
+    ctx.fillStyle = '#ffffff';                     // själva färgen
     ctx.fillText('+1', p.x, p.y);
+    
     ctx.restore();
+
   }
 }
 
