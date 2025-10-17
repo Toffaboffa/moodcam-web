@@ -671,21 +671,59 @@ function compositeFrame(){
 
   compCtx.clearRect(0,0,composite.width,composite.height);
 
-  // 1) Ghost
-  if (!ghostEl.paused && !ghostEl.ended) {
-    every(30, ()=> tag('Draw','ghost ritas @', ghostEl.currentTime?.toFixed?.(2)));
-    compCtx.drawImage(ghostEl, 0, 0, composite.width, composite.height);
+  const hasGhost = (!ghostEl.paused && !ghostEl.ended);
+  const hasMask  = !!latestMask;
+
+  if (hasMask) {
+    // 1) Spöket som bakgrund (bakom allt)
+    if (hasGhost) {
+      every(2, ()=> tag('Draw','ghost ritas (mask) @', ghostEl.currentTime?.toFixed?.(2)));
+      compCtx.drawImage(ghostEl, 0, 0, composite.width, composite.height);
+    } else {
+      every(60, ()=> tag('Draw','ghost inaktiv (mask)'));
+    }
+
+    // 2) Live-bakgrund semi-opak
+    compCtx.globalAlpha = ghostBgAlpha;
+    compCtx.drawImage(video, 0, 0, composite.width, composite.height);
+    compCtx.globalAlpha = 1;
+
+    // 3) Person i full opacitet via mask
+    try {
+      const personCanvas = composite.__personCanvas || (composite.__personCanvas = document.createElement('canvas'));
+      if (personCanvas.width !== composite.width || personCanvas.height !== composite.height){
+        personCanvas.width = composite.width; personCanvas.height = composite.height;
+      }
+      const pctx = personCanvas.getContext('2d');
+      pctx.clearRect(0,0,personCanvas.width,personCanvas.height);
+      pctx.drawImage(video, 0, 0, personCanvas.width, personCanvas.height); // källvideo
+      pctx.globalCompositeOperation = 'destination-in';
+      pctx.drawImage(latestMask, 0, 0, personCanvas.width, personCanvas.height); // maska ut person
+      pctx.globalCompositeOperation = 'source-over';
+      compCtx.drawImage(personCanvas, 0, 0); // lägg personen över
+    } catch (e) {
+      console.warn('[MoodCam] Mask-render fel, faller tillbaka:', e);
+      compCtx.drawImage(video, 0, 0, composite.width, composite.height);
+    }
+
   } else {
-    every(90, ()=> tag('Draw','ghost inaktiv'));
+    // 🚑 Fallback (ingen mask än):
+    // 1) Rita live-video normalt
+    compCtx.drawImage(video, 0, 0, composite.width, composite.height);
+
+    // 2) Rita spöket OVANPÅ med låg opacitet så det syns ändå
+    if (hasGhost) {
+      const ghostOverlayAlpha = Math.max(0.08, 1 - ghostBgAlpha); // t.ex. 0.12 om bgAlpha=0.88
+      compCtx.globalAlpha = ghostOverlayAlpha;
+      compCtx.drawImage(ghostEl, 0, 0, composite.width, composite.height);
+      compCtx.globalAlpha = 1;
+      every(2, ()=> tag('Draw','ghost ritas (fallback) @', ghostEl.currentTime?.toFixed?.(2),'α=',ghostOverlayAlpha.toFixed(2)));
+    } else {
+      every(60, ()=> tag('Draw','ghost inaktiv (fallback)'));
+    }
   }
 
-  // 2) Live bakgrund (semi-opak)
-  compCtx.globalAlpha = ghostBgAlpha;
-  every(120, ()=> tag('Draw','bgAlpha=', ghostBgAlpha));
-  compCtx.drawImage(video, 0, 0, composite.width, composite.height);
-  compCtx.globalAlpha = 1.0;
-
-  // 3) Segmentation throttlad
+  // Throttle segmentation (som tidigare)
   if (segReady && seg) {
     try {
       composite.__segToggle = (composite.__segToggle^1) || 1;
@@ -695,7 +733,7 @@ function compositeFrame(){
       segReady = false; seg = null; latestMask = null;
     }
   }
-
+}
   // 4) Person fullt opak
   if (latestMask){
     const personCanvas = composite.__personCanvas || (composite.__personCanvas = document.createElement('canvas'));
