@@ -83,7 +83,7 @@
           <span id="meterVal" class="small meterVal" aria-live="polite">0</span>
         </div>
         <div class="small" style="margin-top:2px">
-          Moodmätare – Börjar öka efter <em>3s</em>, så SMILE 😄
+          Moodmätare – Börjar öka efter <em>1s</em>, så SMILE 😄
         </div>
       </div>
 
@@ -260,7 +260,7 @@ let HAPPY_PERSON_SECONDS = 0;
 let METER_GOAL_SECONDS = 300;
 let meterShown = 0;
 const METER_EASE = 0.07;
-const HAPPY_WARMUP_SECONDS = 3;
+const HAPPY_WARMUP_SECONDS = 1; // ⬅️ ändrat från 3 till 1
 const CONTRIB_WEIGHT_BY_CONF = true;
 
 const RESET_H = 19, RESET_M = 30;
@@ -787,7 +787,7 @@ function startGhostLoop(){
 
 /* ---------- +1-animationer ---------- */
 const plusOnes = [];
-const PLUS_LIFE = 1.2; // sekunder
+const PLUS_LIFE = 1.0; // ⬇️ något kortare livstid (lägre kostnad)
 
 function spawnPlusOne(x, y){
   // slumpmässig riktning och fart
@@ -812,23 +812,18 @@ function updateAndDrawPlusOnes(dt){
 
     // easing för storlek & alpha
     const t = Math.max(0, Math.min(1, p.age/PLUS_LIFE));
-    const grow = (t<0.25) ? (t/0.25) : 1;                 // väx upp första 0.25s
-    const fade = (t<0.7) ? (t/0.7) : (1 - (t-0.7)/0.3);   // fade in -> ut
+    const grow = (t<0.25) ? (t/0.25) : 1;
+    const fade = (t<0.7) ? (t/0.7) : (1 - (t-0.7)/0.3);
     const scale = 0.2 + 0.8*grow;
 
     ctx.save();
     ctx.globalAlpha = Math.max(0, Math.min(1, fade));
     
-    const size = Math.round(36 * scale);
+    // ⬇️ mindre och utan skuggor/konturer för lägre GPU-kostnad
+    const size = Math.round(28 * scale);
     ctx.font = `bold ${size}px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
     ctx.textBaseline = 'middle';
-    
-    // lätt "glow" för läsbarhet
-    ctx.shadowColor = 'rgba(0,0,0,0.6)';
-    ctx.shadowBlur = 6;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 1;
-    
+
     // Mät bredder
     const txt1 = '+1';
     const txt2 = '❤️';
@@ -841,27 +836,21 @@ function updateAndDrawPlusOnes(dt){
     const startX = p.x - total / 2;
     const y = p.y;
     
-    // Kontur för bättre läsbarhet
-    ctx.lineWidth = Math.max(1, size * 0.08);
-    ctx.strokeStyle = 'rgba(0,0,0,0.9)';
-    
-    // Rita +1
+    // Rita +1 och hjärta (endast fill)
     ctx.textAlign = 'left';
     ctx.fillStyle = '#ffffff';
-    ctx.strokeText(txt1, startX, y);
     ctx.fillText(txt1, startX, y);
-    
-    // Rita hjärtat till höger om +1
     const heartX = startX + w1 + gap;
-    ctx.strokeText(txt2, heartX, y);
     ctx.fillText(txt2, heartX, y);
     
     ctx.restore();
-
   }
 }
 
 /* ---------- Huvudloop (detektering/overlay) ---------- */
+let detectionFrameCounter = 0; // NY VARIABEL globalt
+const DETECTION_EVERY_N_FRAMES = 5; // 60/5 = 12 detektioner/sekund
+
 async function tick(){
   try{
     scheduleResetIfNeeded();
@@ -875,130 +864,148 @@ async function tick(){
       const isel = document.getElementById('inputSize'); if (isel) isel.value = DETECTOR_SIZE;
     }
 
-    const options = new faceapi.TinyFaceDetectorOptions({ inputSize: DETECTOR_SIZE, scoreThreshold: DETECTOR_SCORE });
-    let builder = faceapi.detectAllFaces(video, options);
-    if (LANDMARKS_AVAILABLE && typeof builder.withFaceLandmarks === 'function') builder = builder.withFaceLandmarks();
-    builder = builder.withFaceExpressions().withAgeAndGender();
-
-    const detsFull = await builder;
-
-    const dets = detsFull
-      .slice()
-      .sort((a,b)=> (b.detection.box.width*b.detection.box.height) - (a.detection.box.width*a.detection.box.height))
-      .slice(0, 4);
-    window.__lastFaceCount = dets.length;
-
+    // 🆕 DETEKTION BARA VAR 5:E FRAME
+    detectionFrameCounter++;
     let frameHappyAdd = 0;
+    let dets = [];
+    if (detectionFrameCounter >= DETECTION_EVERY_N_FRAMES) {
+      detectionFrameCounter = 0;
 
-    ctx.clearRect(0,0,overlay.width,overlay.height);
+      const options = new faceapi.TinyFaceDetectorOptions({ inputSize: DETECTOR_SIZE, scoreThreshold: DETECTOR_SCORE });
+      let builder = faceapi.detectAllFaces(video, options);
+      if (LANDMARKS_AVAILABLE && typeof builder.withFaceLandmarks === 'function') builder = builder.withFaceLandmarks();
+      builder = builder.withFaceExpressions().withAgeAndGender();
 
-    for (const det of dets){
-      const b = det.detection.box; const bbox=[b.x,b.y,b.width,b.height];
+      const detsFull = await builder;
 
-      // matchning
-      let best=null, bestIoU=0;
-      for(const t of tracks){ const i=iou(t.bbox,bbox); if(i>bestIoU){bestIoU=i; best=t;} }
-      if(best && bestIoU>0.3){
-        const pb=best.bbox;
-        best.bbox = pb
-          ? [ema(pb[0], bbox[0], BBOX_POS_ALPHA),
-             ema(pb[1], bbox[1], BBOX_POS_ALPHA),
-             ema(pb[2], bbox[2], BBOX_SIZE_ALPHA),
-             ema(pb[3], bbox[3], BBOX_SIZE_ALPHA)]
-          : bbox.slice();
-        best.last=now;
-      } else {
-        const t={ id:nextId++, bbox:bbox.slice(), last:now, created:now, seenFrames:0, counted:false,
-                  peppText:null, ageHist:[], warm:0, contributing:false, effects:null, pose:{},
-                  usePose:false, poseValid:0, poseInvalid:0, emo:'neutral', emoConf:0, lastAge:null,
-                  contribAcc:0 // 🔹 ack för +1 var hel sekund
-                };
-        tracks.push(t); if(overlaysEnabled) assignEffects(t);
-        best = t;
-      }
-      const tr=best;
+      dets = detsFull
+        .slice()
+        .sort((a,b)=> (b.detection.box.width*b.detection.box.height) - (a.detection.box.width*a.detection.box.height))
+        .slice(0, 4);
+      window.__lastFaceCount = dets.length;
 
-      // Pose
-      if (det.landmarks){
-        const lm = det.landmarks;
-        const mean = pts => { const n=pts.length; const s=pts.reduce((a,p)=>({x:a.x+p.x,y:a.y+p.y}),{x:0,y:0}); return {x:s.x/n,y:s.y/n}; };
-        const dist = (a,b)=> Math.hypot(a.x-b.x,a.y-b.y);
-        const mid  = (a,b)=> ({x:(a.x+b.x)/2, y:(a.y+b.y)/2});
-        const Leye = mean(lm.getLeftEye());
-        const Reye = mean(lm.getRightEye());
-        const eyeC = mid(Leye, Reye);
-        const eyeD = dist(Leye, Reye);
-        const angle= Math.atan2(Reye.y - Leye.y, Reye.x - Leye.x);
-        const mouth = lm.getMouth?.();
-        const mL = mouth ? mouth[0] : null;
-        const mR = mouth ? mouth[6] : null;
-        const mouthC = (mL && mR) ? mid(mL, mR) : null;
-        const mouthW = (mL && mR) ? dist(mL, mR) : null;
-        const jaw = lm.getJawOutline?.();
-        const faceW = jaw ? dist(jaw[0], jaw[16]) : null;
-        const pz = tr.pose;
-        pz.eyeCx   = ema(pz.eyeCx,   eyeC.x, POSE_ALPHA);
-        pz.eyeCy   = ema(pz.eyeCy,   eyeC.y, POSE_ALPHA);
-        pz.eyeD    = ema(pz.eyeD,    eyeD,   POSE_ALPHA);
-        pz.angle   = ema(pz.angle,   angle,  POSE_ALPHA);
-        if (mouthC){ pz.mouthCx = ema(pz.mouthCx, mouthC.x, POSE_ALPHA); pz.mouthCy = ema(pz.mouthCy, mouthC.y, POSE_ALPHA); }
-        if (mouthW!=null) pz.mouthW = ema(pz.mouthW, mouthW, POSE_ALPHA);
-        if (faceW!=null)  pz.faceW  = ema(pz.faceW,  faceW,  POSE_ALPHA);
+      for (const det of dets){
+        const b = det.detection.box; const bbox=[b.x,b.y,b.width,b.height];
 
-        const validNow = isValidPose(tr.pose, {x:b.x, y:b.y, width:b.width, height:b.height});
-        if (validNow) { tr.poseValid++; tr.poseInvalid=0; if(!tr.usePose && tr.poseValid>=2) tr.usePose=true; }
-        else          { tr.poseInvalid++; tr.poseValid=0; if(tr.usePose && tr.poseInvalid>=6) tr.usePose=false; }
-      }
+        // matchning
+        let best=null, bestIoU=0;
+        for(const t of tracks){ const i=iou(t.bbox,bbox); if(i>bestIoU){bestIoU=i; best=t;} }
+        if(best && bestIoU>0.3){
+          const pb=best.bbox;
+          best.bbox = pb
+            ? [ema(pb[0], bbox[0], BBOX_POS_ALPHA),
+               ema(pb[1], bbox[1], BBOX_POS_ALPHA),
+               ema(pb[2], bbox[2], BBOX_SIZE_ALPHA),
+               ema(pb[3], bbox[3], BBOX_SIZE_ALPHA)]
+            : bbox.slice();
+          best.last=now;
+        } else {
+          const t={ id:nextId++, bbox:bbox.slice(), last:now, created:now, seenFrames:0, counted:false,
+                    peppText:null, ageHist:[], warm:0, contributing:false, effects:null, pose:{},
+                    usePose:false, poseValid:0, poseInvalid:0, emo:'neutral', emoConf:0, lastAge:null,
+                    contribAcc:0 // 🔹 ack för +1 var hel sekund
+                  };
+          tracks.push(t); if(overlaysEnabled) assignEffects(t);
+          best = t;
+        }
+        const tr=best;
 
-      // Emotion & ålder
-      if (det.expressions){
-        const exp=det.expressions||{}; let emo=null, conf=0; for(const [k,v] of Object.entries(exp)) if(v>conf){ emo=k; conf=v; }
-        tr.emo = emo; tr.emoConf = conf;
-      }
-      const latestAge = ('age' in det) ? (det.age ?? null) : null;
-      if (latestAge != null) tr.lastAge = latestAge;
-      const shownAge = getSmoothedAge(tr, now, latestAge);
+        // Pose
+        if (det.landmarks){
+          const lm = det.landmarks;
+          const mean = pts => { const n=pts.length; const s=pts.reduce((a,p)=>({x:a.x+p.x,y:a.y+p.y}),{x:0,y:0}); return {x:s.x/n,y:s.y/n}; };
+          const dist = (a,b)=> Math.hypot(a.x-b.x,a.y-b.y);
+          const mid  = (a,b)=> ({x:(a.x+b.x)/2, y:(a.y+b.y)/2});
+          const Leye = mean(lm.getLeftEye());
+          const Reye = mean(lm.getRightEye());
+          const eyeC = mid(Leye, Reye);
+          const eyeD = dist(Leye, Reye);
+          const angle= Math.atan2(Reye.y - Leye.y, Reye.x - Leye.x);
+          const mouth = lm.getMouth?.();
+          const mL = mouth ? mouth[0] : null;
+          const mR = mouth ? mouth[6] : null;
+          const mouthC = (mL && mR) ? mid(mL, mR) : null;
+          const mouthW = (mL && mR) ? dist(mL, mR) : null;
+          const jaw = lm.getJawOutline?.();
+          const faceW = jaw ? dist(jaw[0], jaw[16]) : null;
+          const pz = tr.pose;
+          pz.eyeCx   = ema(pz.eyeCx,   eyeC.x, POSE_ALPHA);
+          pz.eyeCy   = ema(pz.eyeCy,   eyeC.y, POSE_ALPHA);
+          pz.eyeD    = ema(pz.eyeD,    eyeD,   POSE_ALPHA);
+          pz.angle   = ema(pz.angle,   angle,  POSE_ALPHA);
+          if (mouthC){ pz.mouthCx = ema(pz.mouthCx, mouthC.x, POSE_ALPHA); pz.mouthCy = ema(pz.mouthCy, mouthC.y, POSE_ALPHA); }
+          if (mouthW!=null) pz.mouthW = ema(pz.mouthW, mouthW, POSE_ALPHA);
+          if (faceW!=null)  pz.faceW  = ema(pz.faceW,  faceW,  POSE_ALPHA);
 
-      // Glad-bidrag
-      if (tr.emo === 'happy' && (tr.emoConf ?? 0) >= EMO_CONF_MIN) {
-        tr.warm = Math.min(HAPPY_WARMUP_SECONDS, (tr.warm || 0) + dt);
-        if (tr.warm >= HAPPY_WARMUP_SECONDS) {
-          if (!tr.counted) {
-            const key=todayKey();
-            visitorsByDay[key]=(visitorsByDay[key]||0)+1;
-            localStorage.setItem('moodcam.visitors', JSON.stringify(visitorsByDay));
-            updateLogInfo();
-            tr.counted = true;
-          }
-          tr.contributing = true;
-          const weight = CONTRIB_WEIGHT_BY_CONF ? tr.emoConf : 1;
-          frameHappyAdd += dt * weight;
+          const validNow = isValidPose(tr.pose, {x:b.x, y:b.y, width:b.width, height:b.height});
+          if (validNow) { tr.poseValid++; tr.poseInvalid=0; if(!tr.usePose && tr.poseValid>=2) tr.usePose=true; }
+          else          { tr.poseInvalid++; tr.poseValid=0; if(tr.usePose && tr.poseInvalid>=6) tr.usePose=false; }
+        }
 
-          // 🔹 +1: en gång per HEL sekund som denna person bidrar
-          tr.contribAcc += dt * weight;
-          while (tr.contribAcc >= 1){
+        // Emotion & ålder
+        if (det.expressions){
+          const exp=det.expressions||{}; let emo=null, conf=0; for(const [k,v] of Object.entries(exp)) if(v>conf){ emo=k; conf=v; }
+          tr.emo = emo; tr.emoConf = conf;
+        }
+        const latestAge = ('age' in det) ? (det.age ?? null) : null;
+        if (latestAge != null) tr.lastAge = latestAge;
+        const shownAge = getSmoothedAge(tr, now, latestAge);
+
+        // Glad-bidrag
+        if (tr.emo === 'happy' && (tr.emoConf ?? 0) >= EMO_CONF_MIN) {
+          const prevWarm = tr.warm || 0;
+          tr.warm = Math.min(HAPPY_WARMUP_SECONDS, prevWarm + dt);
+
+          // ⬅️ Starta +1 direkt när warmup passerar tröskeln
+          if (prevWarm < HAPPY_WARMUP_SECONDS && tr.warm >= HAPPY_WARMUP_SECONDS) {
             const [bx,by,bw,bh]=tr.bbox;
             const rx = mirrorX(bx, bw);
-            // spawn vid toppen av rutan
             spawnPlusOne(rx + bw*0.5, by - 6);
-            tr.contribAcc -= 1;
           }
-        }
-      } else {
-        tr.warm = Math.max(0, (tr.warm || 0) - dt * 0.5);
-        tr.contributing = false;
-        tr.contribAcc = 0; // nollställ ack när man inte längre bidrar
-      }
 
-      // Rita overlay
-      const [bx,by,bw,bh]=tr.bbox;
-      const rx = mirrorX(bx, bw);                 // ✅ matchar spegel på composite
+          if (tr.warm >= HAPPY_WARMUP_SECONDS) {
+            if (!tr.counted) {
+              const key=todayKey();
+              visitorsByDay[key]=(visitorsByDay[key]||0)+1;
+              localStorage.setItem('moodcam.visitors', JSON.stringify(visitorsByDay));
+              updateLogInfo();
+              tr.counted = true;
+            }
+            tr.contributing = true;
+            const weight = CONTRIB_WEIGHT_BY_CONF ? tr.emoConf : 1;
+            frameHappyAdd += dt * weight;
+
+            // +1 en gång per HEL sekund under pågående bidrag
+            tr.contribAcc += dt * weight;
+            while (tr.contribAcc >= 1){
+              const [bx,by,bw,bh]=tr.bbox;
+              const rx = mirrorX(bx, bw);
+              spawnPlusOne(rx + bw*0.5, by - 6);
+              tr.contribAcc -= 1;
+            }
+          }
+        } else {
+          tr.warm = Math.max(0, (tr.warm || 0) - dt * 0.5);
+          tr.contributing = false;
+          tr.contribAcc = 0; // nollställ ack när man inte längre bidrar
+        }
+      }
+    }
+
+    // 🆕 RITA ALLTID – använd senaste tracks-data
+    ctx.clearRect(0,0,overlay.width,overlay.height);
+    for (const tr of tracks) {
+      if (tr.last < now - 1500) continue; // gammal track
+
+      const [bx,by,bw,bh] = tr.bbox; // REANVÄND SENASTE
+      const rx = mirrorX(bx, bw);
       const color=EMO_COLOR[tr.emo]||'#24ff78';
 
       drawEffects(tr, bx,by,bw,bh);               // effekter använder pose + MIRROR internt
 
       if (SHOW_FACE_BOX) { ctx.strokeStyle=color; ctx.lineWidth=UI.faceBoxWidth; ctx.strokeRect(rx,by,bw,bh); }
       if(tr.emo && (tr.emoConf ?? 0) >= EMO_CONF_MIN){
+        const shownAge = getSmoothedAge(tr, now, tr.lastAge);
         const label=`${EMO_SV[tr.emo]||tr.emo} · ${Math.round(tr.emoConf*100)}%` + (shownAge!=null?` · ${shownAge} år`:``);
         drawLabel(rx,by,label);
       } else if(shownAge!=null){ drawLabel(rx,by,`${shownAge} år`); }
