@@ -203,6 +203,12 @@ console.info = (...a)=>{ const s=(a||[]).join(' '); if (NOISE_PATTERNS.some(r=>r
 
 const DEBUG = false;
 
+// ---- DEBUG HELPERS ----
+let __frame = 0;
+const every = (n, fn) => { __frame++; if (__frame % n === 0) fn(); };
+const tag = (t, ...a) => console.log(`[${t}]`, ...a);
+
+
 /* ---------- Konstanter & state ---------- */
 const EMO_SV = { angry:"Arg", disgusted:"Äcklad", fearful:"Rädd", happy:"Glad", neutral:"Neutral", sad:"Ledsen", surprised:"Förvånad" };
 const EMO_EMOJI = { angry:"😠", disgusted:"🤢", fearful:"😨", happy:"😄", neutral:"😐", sad:"😢", surprised:"😮" };
@@ -578,24 +584,30 @@ function setupSegmentation(){
         window.SelfieSegmentation;
 
       if (typeof SegClass !== 'function') {
-        console.warn('[MoodCam] SelfieSegmentation saknas eller har oväntat API – kör utan bakgrundsmask.');
+        console.warn('[Seg] SelfieSegmentation saknas/okänt API – kör utan mask.');
         seg = null; segReady = false; latestMask = null;
         return resolve();
       }
 
       seg = new SegClass({
-        locateFile: (file) =>
-          `./vendor/mediapipe/selfie_segmentation/${file}`
+        locateFile: (file) => `./vendor/mediapipe/selfie_segmentation/${file}`
       });
 
       seg.setOptions({ modelSelection: 1 });
-      if (typeof seg.initialize === 'function') seg.initialize().catch(()=>{});
-      seg.onResults((res) => { latestMask = (res && res.segmentationMask) ? res.segmentationMask : null; });
+      if (typeof seg.initialize === 'function') seg.initialize().then(
+        ()=> tag('Seg', 'initialize() klar')
+      ).catch(e=> console.warn('[Seg] initialize() fel', e));
+
+      seg.onResults((res) => {
+        latestMask = (res && res.segmentationMask) ? res.segmentationMask : null;
+        every(30, ()=> tag('Seg', 'mask', !!latestMask, latestMask?.width, latestMask?.height));
+      });
 
       segReady = true;
+      tag('Seg', 'redo:', segReady);
       resolve();
     } catch (e) {
-      console.warn('[MoodCam] Kunde inte initiera SelfieSegmentation, kör utan mask:', e);
+      console.warn('[Seg] Init-fel, kör utan mask:', e);
       seg = null; segReady = false; latestMask = null;
       resolve();
     }
@@ -604,12 +616,27 @@ function setupSegmentation(){
 
 function pickGhost(){ return GHOST_CLIPS[Math.floor(Math.random()*GHOST_CLIPS.length)]; }
 async function playGhostOnce(){
-  if (!ghostEnabled || playingGhost || !GHOST_CLIPS.length) return;
-  playingGhost = true;
-  ghostEl.src = pickGhost();
+  if (!ghostEnabled)  { tag('Ghost', 'avstängd'); return; }
+  if (playingGhost)   { tag('Ghost', 'spelar redan'); return; }
+  if (!GHOST_CLIPS.length){ tag('Ghost','inga klipp'); return; }
+
+  const src = pickGhost();
+  tag('Ghost', 'startar', src);
+  ghostEl.src = src;
   ghostEl.loop = false;
   ghostEl.currentTime = 0;
-  try { await ghostEl.play(); } catch {}
+
+  try {
+    const can = ghostEl.canPlayType('video/mp4');
+    tag('Ghost', 'canPlayType(mp4)=', can || '(blank)');
+    await ghostEl.play();
+    playingGhost = true;
+    tag('Ghost', 'play() OK');
+  } catch (err) {
+    playingGhost = false;
+    console.error('[Ghost] play() fel', err);
+  }
+}
   const end = () => { ghostEl.pause(); ghostEl.currentTime = 0; playingGhost = false; lastGhostTs = performance.now(); ghostEl.removeEventListener('ended', end); };
   ghostEl.addEventListener('ended', end);
 }
@@ -938,7 +965,12 @@ async function init(){
   const ghostModeSel = document.getElementById('ghostMode');
   const ghostFacesOnlyEl = document.getElementById('ghostFacesOnly');
   const ghostBgAlphaEl = document.getElementById('ghostBgAlpha');
-  document.getElementById('ghostNow').addEventListener('click', ()=> playGhostOnce());
+  ghostEl.addEventListener('loadeddata', ()=> tag('Ghost','loadeddata', ghostEl.videoWidth, ghostEl.videoHeight));
+ghostEl.addEventListener('play', ()=> tag('Ghost','play'));
+ghostEl.addEventListener('pause', ()=> tag('Ghost','pause'));
+ghostEl.addEventListener('ended', ()=> { tag('Ghost','ended'); });
+ghostEl.addEventListener('error', ()=> console.error('[Ghost] video error', ghostEl.error));
+document.getElementById('ghostNow').addEventListener('click', ()=> tag('Ghost','knapp: spela nu'));
 
   // ⛔️ Startläge: av
   ghostEnabled = ghostToggle.checked;       // false
