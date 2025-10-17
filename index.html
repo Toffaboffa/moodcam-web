@@ -51,6 +51,13 @@
   .two-col{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center}
   .hud{position:fixed;left:14px;bottom:14px;font-size:12px;opacity:.7}
 </style>
+<script> 
+  /* ---------- Konsolfilter ---------- */
+  const ORIG_CONSOLE = { info: console.info, warn: console.warn, log: console.log };
+  const NOISE_PATTERNS = [/already been set/i,/backend was already registered/i,/kernel .* already registered/i,/Reusing existing backend factory/i];
+  console.warn = (...a)=>{ const s=(a||[]).join(' '); if (NOISE_PATTERNS.some(r=>r.test(s))) return; ORIG_CONSOLE.warn.apply(console,a); };
+  console.info = (...a)=>{ const s=(a||[]).join(' '); if (NOISE_PATTERNS.some(r=>r.test(s))) return; ORIG_CONSOLE.info.apply(console,a); };
+  </script>
   <!-- Libs -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.21.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@4.21.0/dist/tf-backend-wasm.min.js"></script>
@@ -195,12 +202,6 @@
   <div class="hud">Allt körs lokalt i datorn. /Kristoffer</div>
 
 <script>
-/* ---------- Konsolfilter ---------- */
-const ORIG_CONSOLE = { info: console.info, warn: console.warn, log: console.log };
-const NOISE_PATTERNS = [/already been set/i,/backend was already registered/i,/kernel .* already registered/i,/Reusing existing backend factory/i];
-console.warn = (...a)=>{ const s=(a||[]).join(' '); if (NOISE_PATTERNS.some(r=>r.test(s))) return; ORIG_CONSOLE.warn.apply(console,a); };
-console.info = (...a)=>{ const s=(a||[]).join(' '); if (NOISE_PATTERNS.some(r=>r.test(s))) return; ORIG_CONSOLE.info.apply(console,a); };
-
 const DEBUG = false;
 
 // ---- DEBUG HELPERS ----
@@ -325,11 +326,14 @@ function syncOverlaySize(){
   composite.style.width  = rect.width + 'px';
   composite.style.height = rect.height + 'px';
 }
+
+/* 🔧 Ändrat: dölj åldern tills glidande medelvärde finns */
 function getSmoothedAge(track, now, latestAge){
   if (latestAge!=null && !Number.isNaN(latestAge)) track.ageHist.push({t:now,a:latestAge});
   const cutoff=now-AGE_SMOOTH_WINDOW_MS; while (track.ageHist.length && track.ageHist[0].t<cutoff) track.ageHist.shift();
-  if (now-track.created<AGE_SMOOTH_WINDOW_MS) return latestAge!=null?Math.round(latestAge):null;
-  if (!track.ageHist.length) return latestAge!=null?Math.round(latestAge):null;
+  // Visa inget förrän vi har ett fönster med historik
+  if ((now - track.created) < AGE_SMOOTH_WINDOW_MS) return null;
+  if (!track.ageHist.length) return null;
   const avg=track.ageHist.reduce((s,p)=>s+p.a,0)/track.ageHist.length; return Math.round(avg);
 }
 
@@ -760,6 +764,49 @@ function startGhostLoop(){
   requestAnimationFrame(step);
 }
 
+/* ---------- +1-animationer ---------- */
+const plusOnes = [];
+const PLUS_LIFE = 1.2; // sekunder
+
+function spawnPlusOne(x, y){
+  // slumpmässig riktning och fart
+  const ang = Math.random()*Math.PI*2;
+  const speed = 40 + Math.random()*100; // px/s
+  plusOnes.push({
+    x, y,
+    vx: Math.cos(ang)*speed,
+    vy: Math.sin(ang)*speed,
+    age: 0
+  });
+}
+
+function updateAndDrawPlusOnes(dt){
+  for (let i=plusOnes.length-1;i>=0;i--){
+    const p = plusOnes[i];
+    p.age += dt;
+    if (p.age >= PLUS_LIFE){ plusOnes.splice(i,1); continue; }
+    // rörelse
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+
+    // easing för storlek & alpha
+    const t = Math.max(0, Math.min(1, p.age/PLUS_LIFE));
+    const grow = (t<0.25) ? (t/0.25) : 1;                 // väx upp första 0.25s
+    const fade = (t<0.7) ? (t/0.7) : (1 - (t-0.7)/0.3);   // fade in -> ut
+    const scale = 0.2 + 0.8*grow;
+
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, fade));
+    ctx.font = `${Math.round(18*scale)}px system-ui`;
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    // lätt "glow" för läsbarhet
+    ctx.shadowColor='rgba(0,0,0,0.6)'; ctx.shadowBlur=6; ctx.shadowOffsetX=0; ctx.shadowOffsetY=1;
+    ctx.fillStyle = '#22c55e';
+    ctx.fillText('+1', p.x, p.y);
+    ctx.restore();
+  }
+}
+
 /* ---------- Huvudloop (detektering/overlay) ---------- */
 async function tick(){
   try{
@@ -809,7 +856,9 @@ async function tick(){
       } else {
         const t={ id:nextId++, bbox:bbox.slice(), last:now, created:now, seenFrames:0, counted:false,
                   peppText:null, ageHist:[], warm:0, contributing:false, effects:null, pose:{},
-                  usePose:false, poseValid:0, poseInvalid:0, emo:'neutral', emoConf:0, lastAge:null };
+                  usePose:false, poseValid:0, poseInvalid:0, emo:'neutral', emoConf:0, lastAge:null,
+                  contribAcc:0 // 🔹 ack för +1 var hel sekund
+                };
         tracks.push(t); if(overlaysEnabled) assignEffects(t);
         best = t;
       }
@@ -870,10 +919,21 @@ async function tick(){
           tr.contributing = true;
           const weight = CONTRIB_WEIGHT_BY_CONF ? tr.emoConf : 1;
           frameHappyAdd += dt * weight;
+
+          // 🔹 +1: en gång per HEL sekund som denna person bidrar
+          tr.contribAcc += dt * weight;
+          while (tr.contribAcc >= 1){
+            const [bx,by,bw,bh]=tr.bbox;
+            const rx = mirrorX(bx, bw);
+            // spawn vid toppen av rutan
+            spawnPlusOne(rx + bw*0.5, by - 6);
+            tr.contribAcc -= 1;
+          }
         }
       } else {
         tr.warm = Math.max(0, (tr.warm || 0) - dt * 0.5);
         tr.contributing = false;
+        tr.contribAcc = 0; // nollställ ack när man inte längre bidrar
       }
 
       // Rita overlay
@@ -885,9 +945,9 @@ async function tick(){
 
       if (SHOW_FACE_BOX) { ctx.strokeStyle=color; ctx.lineWidth=UI.faceBoxWidth; ctx.strokeRect(rx,by,bw,bh); }
       if(tr.emo && (tr.emoConf ?? 0) >= EMO_CONF_MIN){
-        const label=`${EMO_SV[tr.emo]||tr.emo} · ${Math.round(tr.emoConf*100)}%` + (shownAge?` · ${shownAge} år`:``);
+        const label=`${EMO_SV[tr.emo]||tr.emo} · ${Math.round(tr.emoConf*100)}%` + (shownAge!=null?` · ${shownAge} år`:``);
         drawLabel(rx,by,label);
-      } else if(shownAge){ drawLabel(rx,by,`${shownAge} år`); }
+      } else if(shownAge!=null){ drawLabel(rx,by,`${shownAge} år`); }
 
       const emoji=EMO_EMOJI[tr.emo]||"🙂"; const emSize=Math.max(28, Math.round(Math.min(bw,bh)*0.22));
       ctx.font=`${emSize}px serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
@@ -899,12 +959,15 @@ async function tick(){
       }
     }
 
-    // gladtid + mätare
+    // gladtid + mätare (global)
     HAPPY_PERSON_SECONDS += frameHappyAdd;
     const targetPct = Math.min(100, 100*(HAPPY_PERSON_SECONDS/METER_GOAL_SECONDS));
     meterShown = meterShown + (targetPct - meterShown) * METER_EASE;
     document.getElementById('meterFill').style.width = Math.max(0,Math.min(100,meterShown)) + '%';
     document.getElementById('meterVal').textContent = Math.round(meterShown);
+
+    // 🔹 Rita +1-puffar överst (efter allt annat)
+    updateAndDrawPlusOnes(dt);
 
     // städa spår
     const tnow=performance.now(); for(let i=tracks.length-1;i>=0;i--) if(tnow-tracks[i].last>1500) tracks.splice(i,1);
