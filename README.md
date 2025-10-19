@@ -1,330 +1,195 @@
-# Vialundskolans MoodCam — README
+# Vialundskolans MoodCam
 
-En *helt lokal* webb-app som med hjälp av din webbkamera:
+**Kortfattat:** En helt lokal webb-app som använder din webbkamera för att upptäcka ansikten, estimera känslor & ålder, lägga på roliga overlays, spela diskreta ”spökklipp” i bakgrunden och räkna klassens ”glad-sekunder” i en moodmätare. **Allt körs i webbläsaren – ingen data lämnar datorn.**
 
-* detekterar ansikten, skattar känslor & ålder
-* ritar roliga overlays (hattar/glasögon m.m.) som följer ansiktets rörelser
-* visar en **moodmätare** som räknar “glad-sekunder”
-* kan spela upp *diskreta* “spökklipp” i bakgrunden och maskera ut personer i förgrunden (Halloween-läge)
-* sparar enkel daglig besökslogg lokalt och kan exportera CSV
+Skapad av **Kristoffer**.
 
-All inferens sker i webbläsaren. **Ingen data lämnar datorn**.
+---
+
+## Vad gör den?
+
+- Detekterar ansikten och skattar känslor (t.ex. *Glad, Förvånad, Neutral*) och ålder.
+- Lägger på *overlays* (hattar/glasögon m.m.) som följer ansiktet.
+- Visar en **moodmätare** som ökar när personer är glada.
+- Kan spela *spökklipp i bakgrunden* (Halloween-läge) och maskera tillbaka personer i förgrunden.
+- Loggar antal ”besökare” per dag lokalt och kan exportera CSV.
+- Kan köras helt offline om du hostar allt lokalt.
+
+> Tips: I appen finns en **OM**-knapp som visar hela den här README:n i ett popup-fönster.
 
 ---
 
 ## Innehåll
-
-* [Tekniker](#tekniker)
-* [En överblick](#en-överblick)
-* [Snabbstart](#snabbstart)
-* [Mappstruktur & resurser](#mappstruktur--resurser)
-* [Inställningar i UI](#inställningar-i-ui)
-* [Hur det fungerar (pipeline)](#hur-det-fungerar-pipeline)
-* [Overlays & teman](#overlays--teman)
-* [Peppande texter (peppjson)](#peppande-texter-peppjson)
-* [Halloween: spökbakgrund](#halloween-spökbakgrund)
-* [Moodmätare & besökslogg](#moodmätare--besökslogg)
-* [Prestanda & kvalitet](#prestanda--kvalitet)
-* [Tillgänglighet](#tillgänglighet)
-* [Säkerhet & integritet](#säkerhet--integritet)
-* [Felsökning](#felsökning)
-* [Konfigurationskonstanter (koden)](#konfigurationskonstanter-koden)
-* [Vanliga frågor](#vanliga-frågor)
+- [Tekniker](#tekniker)
+- [Snabbstart](#snabbstart)
+- [Mappstruktur & resurser](#mappstruktur--resurser)
+- [Inställningar i UI](#inställningar-i-ui)
+- [Hur det fungerar (pipeline)](#hur-det-fungerar-pipeline)
+- [Overlays & teman](#overlays--teman)
+- [Peppande texter (peppjson)](#peppande-texter-peppjson)
+- [Halloween: spökbakgrund](#halloween-spökbakgrund)
+- [Moodmätare & besökslogg](#moodmätare--besökslogg)
+- [Prestanda & kvalitet](#prestanda--kvalitet)
+- [Tillgänglighet](#tillgänglighet)
+- [Säkerhet & integritet](#säkerhet--integritet)
+- [Felsökning](#felsökning)
+- [Konfigurationskonstanter (koden)](#konfigurationskonstanter-koden)
+- [Vanliga frågor](#vanliga-frågor)
 
 ---
 
 ## Tekniker
-
-* **TensorFlow.js** (`@tensorflow/tfjs` + automatisk fallback till `tfjs-backend-wasm`)
-* **face-api.js** (tinyFaceDetector + expressions + age/gender + 68-landmarks)
-* **MediaPipe Selfie Segmentation** (maskar ut personer i förgrunden till spök-komposit)
-* Vanilla **HTML/CSS/JS**, inga byggsteg krävs (statisk host räcker)
-
----
-
-## En överblick
-
-Gränssnittet består av en “lager-wrap” där tre plan ritas:
-
-1. **Composite-canvas** – *bakgrundsspöke + livekamera semitransparent + personmask opak*
-2. **Overlay-canvas** – etiketter (känsla/ålder), emojis, pepp, samt frivilliga ansiktsrutor/overlays
-3. **Moodmätare** – fast panel i nederkant
-
-Råvideon finns i DOM men är dold: vi visar i stället kompositen så Halloween-effekten fungerar.
+- **TensorFlow.js** (`@tensorflow/tfjs` + fallback till `tfjs-backend-wasm`)
+- **face-api.js** (tinyFaceDetector + expressions + age/gender + 68-landmarks)
+- **MediaPipe Selfie Segmentation** (för personmask i komposit)
+- Vanilla **HTML/CSS/JS** (statisk host räcker)
 
 ---
 
 ## Snabbstart
+1. Lägg filerna i en mapp:
+   - `index.html`
+   - `models/` (face-api.js-modeller)
+   - `img/` (overlays + `manifest.json`, `assets/meta.json`)
+   - `pepp.json` (valfritt)
+   - `ghosts/` (valfritt, mp4-klipp)
+2. Starta en statisk server (HTTPS/localhost för kamera):
+   - `npx serve .` eller `python -m http.server`
+3. Öppna sidan i en modern webbläsare och tillåt kamera.
+4. Klicka **Starta kamera**.
 
-1. **Placera filer** i en mapp med:
-
-   * `index.html` (det här projektet)
-   * `models/` (face-api.js modeller, tinyFaceDetector m.fl.)
-   * `img/` (overlays, `manifest.json`, samt `assets/meta.json`)
-   * `pepp.json` (frivilligt – pepptexter)
-   * `ghosts/` (frivilligt – dina mp4-klipp)
-
-2. **Starta en statisk server** (HTTPS rekommenderas för kameran):
-
-   * Valfritt: `npx serve .` eller `python -m http.server` (lokalt kan kamera kräva `https://` eller `localhost` beroende på webbläsare).
-
-3. **Öppna sidan** i en modern webbläsare (Chrome/Edge/Brave/Firefox), tillåt kameran.
-
-4. Klicka **Starta kamera** → appen laddar modeller, startar kamera, och kör.
-
-> **Tips:** Om kameran inte startar – se [Felsökning](#felsökning).
+> Om kameran inte startar – se **Felsökning**.
 
 ---
 
 ## Mappstruktur & resurser
 
-En föreslagen struktur:
-
 ```
-/ (roten där index.html ligger)
-├─ models/                         # face-api.js modelfiler
-│  ├─ tiny_face_detector_model-weights_manifest.json
-│  ├─ face_expression_model-weights_manifest.json
-│  ├─ age_gender_model-weights_manifest.json
-│  ├─ face_landmark_68_model-weights_manifest.json
-│  └─ ... (tillhörande bin)
+
+/ (roten)
+├─ index.html
+├─ models/
 ├─ img/
-│  ├─ manifest.json                # lista över overlays (kan ersättas av teman)
-│  ├─ assets/                      # filer & per-filens passform i meta.json
+│  ├─ manifest.json
+│  ├─ assets/
 │  │  ├─ meta.json
-│  │  ├─ hats/..., glasses/... etc
+│  │  ├─ hats/ ... glasses/ ... eyes/ ... mouth/ ... facial_hair/ ...
 │  └─ tema/
 │     ├─ halloween/manifest.json
 │     ├─ jul/manifest.json
 │     └─ ...
-├─ ghosts/                         # mp4-klipp för spökbakgrund
-│  ├─ peek_01.mp4
-│  ├─ walk_wall_02.mp4
-│  └─ flash_03.mp4
-└─ pepp.json                       # { "kategori": ["text", ...], ... }
-```
+├─ ghosts/
+└─ pepp.json
 
-### `pepp.json` (exempel)
+````
 
+**`pepp.json` (exempel)**
 ```json
 {
-  "Allmänt": [
-    "Heja dig!",
-    "Du är grym!",
-    "Snyggt fokus!"
-  ],
-  "Halloween": [
-    "Buu... 😉",
-    "Modigt leende!"
-  ]
+  "Allmänt": ["Heja dig!", "Du är grym!", "Snyggt fokus!"],
+  "Halloween": ["Buu... 😉", "Modigt leende!"]
 }
-```
+````
 
-### `img/manifest.json` (exempel)
+**`img/manifest.json` (exempel)**
 
 ```json
 {
-  "hats": [
-    { "file": "assets/hats/party_01.png", "prob": 1, "fit": "hat", "wFactor": 1.1, "yOffset": -0.12 }
-  ],
-  "glasses": [
-    { "file": "assets/glasses/round_02.png", "prob": 1.2, "fit": "glasses", "wFactor": 2.0 }
-  ],
+  "hats":    [{ "file": "assets/hats/party_01.png", "prob": 1,   "fit": "hat", "wFactor": 1.1, "yOffset": -0.12 }],
+  "glasses": [{ "file": "assets/glasses/round_02.png", "prob": 1.2, "fit": "glasses", "wFactor": 2.0 }],
   "eyes": [], "mouth": [], "facial_hair": []
 }
 ```
 
-### `img/assets/meta.json` (exempel)
-
-Per fil-override för passform, skala m.m. (sammanslås över `manifest.json`):
+**`img/assets/meta.json` (exempel)**
 
 ```json
-{
-  "assets/glasses/round_02.png": { "fit": "glasses", "wFactor": 2.05, "yOffset": 0.06 }
-}
+{ "assets/glasses/round_02.png": { "fit": "glasses", "wFactor": 2.05, "yOffset": 0.06 } }
 ```
-
-> **fit** stöds: `eyes`, `glasses`, `mouth`, `beard` (*facial_hair*), `hat`
-> Default gissas från sökvägen om `fit` saknas.
 
 ---
 
 ## Inställningar i UI
 
-Öppna **Settings** uppe till vänster. Viktiga kontroller:
+Öppna **Settings**:
 
-* **Kamera**: välj videokälla.
-* **Konfidens (etikett)**: min. känslo-konfidens för att visa etiketten.
-* **Detector size**: inmatningsstorlek till TinyFaceDetector (större = mer noggrant men tyngre).
-* **Detektor-tröskel**: score-threshold (0.40–0.80).
-
-**Peppande one-liners**
-
-* Aktivera/avaktivera.
-* Välj *Kategori* (fylls från `pepp.json`).
-
-**Overlays & teman**
-
-* Aktivera overlays.
-* Välj **Tema** (läser `img/tema/<tema>/manifest.json`).
-* Slå av/på Hattar/Glasögon/Ögon/Munnar/Skägg.
-* Visa ansiktsruta (debug/estetik).
-
-**Kamera – bild (filter)**
-
-* Ljusstyrka, Kontrast, Mättnad, Ton, Temperatur (endast visuell effekt).
-* **Spegelvänd bild** (spegelvänder videokällan, overlay kompenserar).
-
-**Besökslogg**
-
-* Ladda ner CSV.
-* Nollställ (tömmer `localStorage` för loggen).
-
-**Bakgrundseffekt (Halloween)**
-
-* Aktivera.
-* **Frekvens**: Sällan / Ibland / Ofta
-
-  * *Sällan:* snitt ~60 min
-  * *Ibland:* snitt ~30 min
-  * *Ofta:* snitt ~10 min
-* **Bara när någon syns** (kräver ansikte i bild).
-* **Bakgrundsgenomskinlighet** (hur tydlig live-bakgrunden är under spökklipp).
-* **Spela spöke nu** (forcerar ett klipp direkt).
-
-**Moodmätare – mål**
-
-* Mål (sekunder glad-tid): anger 100% i mätaren.
+* Kamera, Konfidens, Detector size, Detektor-tröskel
+* **Peppande one-liners** (läses från `pepp.json`)
+* **Overlays & teman** (tema byter *filer*, passform från `assets/meta.json`)
+* **Kamera – bild (filter)** (påverkar bara visning)
+* **Besökslogg** (export/nollställ)
+* **Bakgrundseffekt** (spökklipp: Sällan/Ibland/Ofta, ”bara när någon syns”)
+* **Moodmätare – mål** (sekunder = 100%)
 
 ---
 
 ## Hur det fungerar (pipeline)
 
-1. **Init & backend**
-   Försöker `webgl` → fallback till `wasm`. Laddar face-modeller; försöker även 68-landmarks (om det går **aktiveras precisionspassning** för overlays).
-
-2. **Kamerastart**
-   `getUserMedia` öppnar vald kamera. Dold `<video>` fyller **composite-canvas** (visas), och **overlay-canvas** ovanpå.
-
-3. **Ansikten & känslor (60 fps best effort)**
-
-   * `TinyFaceDetector` (med `inputSize` & `scoreThreshold` från UI)
-   * Expressions + Age/Gender
-   * (Valfritt) 68-landmarks för ögon/mun/käklinje → ger stabil **pose** (ögon-centrum, ögonavstånd, vinkel).
-   * En enkel **IoU-baserad spårning** matchar nya rutor till tidigare *tracks*.
-   * Smoothing:
-
-     * bbox: pos α=0.35, storlek α=0.75
-     * pose: α=0.15
-     * ålder: glidande 10 s fönster
-   * **Warmup 3 s** innan glad-tid börjar räknas för en person.
-
-4. **Ritning**
-
-   * **Composite:** ghost (botten) → live (semi-opak) → **personer opakt** (via MediaPipe-mask).
-   * **Overlay:** etiketter, emoji, pepptexter, *valfria* ansiktsrutor och 2D-overlays som följer pose.
-
-5. **Moodmätare**
-   Summerar glad-sekunder över alla synliga. Konvergerar mjukt mot målet (ease 0.07).
-
-6. **Logg**
-   Per dag (YYYY-MM-DD) ökas besökare första gången en track uppnår warmup. Lagring i `localStorage`.
+1. Backend väljs (WebGL → WASM fallback). Modeller laddas.
+2. Kamera startar, composite-canvas visas (live + ev. spökbakgrund + personmask).
+3. Ansikten detekteras; känslor/ålder estimeras; landmarks ger stabil pose.
+4. Overlays ritas enligt pose; pepp/etikett/emoji visas per ansikte.
+5. Moodmätaren summerar *glad-sekunder* och eased mot målet.
+6. Besökslogg sparar första gången en person passerar warmup.
 
 ---
 
 ## Overlays & teman
 
-* **Teman** väljs i UI.
-
-  * Standard: `img/manifest.json`
-  * Tema: `img/tema/<namn>/manifest.json`
-
-* **Viktning:** varje objekt kan ha `"prob"` för att styra sannolikhet.
-
-* **Passform:** från `manifest.json` eller per fil i `img/assets/meta.json`
-
-  * `fit`: `eyes | glasses | mouth | beard | hat`
-  * `wFactor`: relativ bredd utifrån referens (ögonavstånd/munbredd/ansiktsbredd)
-  * `xOffset`/`yOffset`: i **referensbredd** (positiva nedåt/höger)
-  * `rot`: `false` för att **inte** rotera med ögonlinjen
-  * `flipX`: spegelvänd just denna asset
-
-> Om 68-landmarks inte kunde laddas **deaktiveras overlay-passning** (ritas ej) tills landmarks blir tillgängliga.
+* Välj tema i UI: `img/manifest.json` eller `img/tema/<namn>/manifest.json`.
+* Varje resurs kan ha `prob` (vikt), `fit`, `wFactor`, `xOffset`, `yOffset`, `rot`, `flipX`.
+* Om 68-landmarks saknas pausas passningen och overlays ritas inte.
 
 ---
 
 ## Peppande texter (`pepp.json`)
 
-* Format: `{ "Kategori1": ["text1", "text2"], "Kategori2": [...] }`
-* Välj *Alla* eller specifik kategori i UI.
-* En slumpad text **låses per person** tills spåret försvinner.
+* Format: `{ "Kategori": ["text", ...] }`.
+* Välj **Alla** eller specifik kategori i UI.
+* En slumpad text **låses per person** tills spåret lämnar bild.
 
 ---
 
 ## Halloween: spökbakgrund
 
-**Idé:** Spela upp korta mp4-klipp *bakom* livevideon medan personer i förgrunden maskas tillbaka ovanpå (så spöken upplevs i bakgrunden).
-
-* Bakgrundskomposit kör i en egen `requestAnimationFrame`-loop *efter* kameran startats.
-* **Selfie Segmentation** ger en binär mask per bildruta.
-  Vi renderar: *ghost* → *live α=ghostBgAlpha* → *live klippt av mask (person = 1.0 opacitet)*.
-* **Frekvens (slump):**
-
-  * *Sällan:* ~3600 s medel (60 min)
-  * *Ibland:* ~1800 s (30 min)
-  * *Ofta:* ~600 s (10 min)
-    (Poisson-liknande: varje sekund chans = 1/medel. Minsta gap: 120 000 ms.)
-* **Bara när någon syns**: kräver att ansikten detekteras just då.
-* **Knappar:** “Spela spöke nu 👻” för en direkt trigger.
-* **Lägg till klipp:** placera `.mp4` i `ghosts/` och lägg filnamn i `GHOST_CLIPS` i koden.
-
-**Tips för video:**
-H.264, 720p eller lägre, korta klipp 1–5 s, loopvänliga eller tydliga “ender”, **tyst** (muted).
+* Spelar korta mp4-klipp bakom livevideon.
+* Personmask (MediaPipe) lägger tillbaka personer opakt.
+* Frekvens: **Sällan ~60 min**, **Ibland ~30 min**, **Ofta ~10 min** (stochastiskt, min-gap ~2 min).
+* Knapp: **Spela spöke nu 👻** (forcerar).
+* Tips: 720p, 1–5 s, tysta klipp.
 
 ---
 
 ## Moodmätare & besökslogg
 
-* **Mätare:** ökar med tiden som *glada ansikten* finns (efter warmup 3 s).
-  Om flera glada samtidigt → **adderas** deras bidrag.
-  Bidrag kan viktas med konfidens (på i koden).
-* **Mål:** justeras i UI. 100% = uppnått mål (sekunder).
-* **Daglig reset:** kl 19:30 (`RESET_H = 19`, `RESET_M = 30`).
-* **Logg:** *första gången* varje person räknas (när warmup passerats).
-  Lagra per dag i `localStorage`.
-  **Export:** “Ladda ner CSV”.
+* Warmup innan glädje börjar räknas, konfidens kan vikta bidraget.
+* Mål (sek) = 100%.
+* Daglig reset (se konstanter).
+* Logg per datum (localStorage), exportera CSV från UI.
 
 ---
 
 ## Prestanda & kvalitet
 
-* **WebGL** används om möjligt – annars **WASM**.
-* **Detector size**: 224–512 (UI). Större = mer noggrant, men tyngre.
-* **Detector threshold**: 0.40–0.80 (UI).
-* **Adaptiv input** (i koden): om många ansikten (≥3) → sänk `inputSize` till 288 automatiskt.
-* **Landmarks** kräver mer GPU/CPU men ger mycket bättre overlay-passning.
-* **Canvas storlek** synkas mot videons upplösning.
-* **FPS** påverkas av:
-
-  * svag hårdvara
-  * många ansikten
-  * stora overlaybilder
-  * tunga ghost-videor
+* WebGL om möjligt; WASM fallback.
+* Adaptiv input size vid många ansikten.
+* Landmarks ger bäst passning men kostar prestanda.
+* Tunga overlays/klipp påverkar FPS – sänk `inputSize`/bitrate vid behov.
 
 ---
 
 ## Tillgänglighet
 
-* Mätarens numeriska värde annonseras med `aria-live="polite"` (skärmläsare).
-* Kontrast & storlekar uppfyller god läsbarhet; justera i CSS/`UI`-objektet vid behov.
+* Mätarens siffra har `aria-live="polite"`.
+* Kontrast & storlek anpassad för läsbarhet.
 
 ---
 
 ## Säkerhet & integritet
 
-* All beräkning körs **lokalt i webbläsaren**.
-* Inga nätverksanrop för bild/ljud (förutom att hämta statiska script och dina lokala resurser).
-* Ingen spårning. Logg sparas **endast** i din webbläsare (`localStorage`).
+* All beräkning sker lokalt.
+* Ingen spårning, ingen nätverksuppladdning av kamera.
+* Logg ligger i din webbläsare.
 
 ---
 
@@ -332,111 +197,35 @@ H.264, 720p eller lägre, korta klipp 1–5 s, loopvänliga eller tydliga “end
 
 **Kameran startar inte**
 
-* Kör sidan över **HTTPS** eller via `localhost`.
-* Kontrollera kamerabehörighet i webbläsaren / OS.
-* Stäng andra appar som använder kameran (Teams/Meet/Zoom).
-* Se konsolen för fel (t.ex. “Kunde inte läsa in AI-modellerna” → kontrollera `/models/`).
+* Kör via HTTPS eller `localhost`, ge kamerabehörighet, stäng andra kameraappar.
 
 **Modeller laddas inte**
 
-* Säkerställ att `models/` innehåller *weights_manifest.json* och binärer med korrekta filnamn.
-* Kolla rätt sökväg i koden (`const base='./models/'`).
+* Kontrollera `models/` (manifest + binärer) och sökväg i koden.
 
 **Overlays syns inte**
 
-* Landmarks kan saknas. Se logg: “Landmarks aktiverade”.
-  Om ej aktiverade → kontrollera att `faceLandmark68Net` filer finns i `models/`.
-* Kontrollera att `img/manifest.json` och krävd fil finns.
-  Se nätverksfliken i devtools (“404” på bildfiler?).
+* Kontrollera att landmarks laddats och att overlay-filer finns (nätverksfliken).
 
-**Ghost-effekt syns inte**
+**Ghost syns inte**
 
-* `ghosts/` tomt eller fel filnamn i `GHOST_CLIPS`.
-* Frekvensen kan vara låg (Sällan/Ibland). Testa **Spela spöke nu 👻**.
-* `Bakgrundsgenomskinlighet` för hög → spöket drunknar. Testa lägre (t.ex. 0.75–0.85).
-
-**Låg FPS**
-
-* Sänk *Detector size* i UI (t.ex. 288–320).
-* Avaktivera overlays/landmarks (tillfälligt).
-* Minska video-upplösningen i `startCamera()` (t.ex. 960×540).
-* Använd lättare ghost-klipp (kortare, lägre upplösning).
+* Fyll `ghosts/`, justera frekvensen, prova **Spela spöke nu 👻**,
+  sänk bakgrundsopacitet om spöket drunknar.
 
 ---
 
 ## Konfigurationskonstanter (koden)
 
-I `index.html` högst upp i `<script>`:
-
-```js
-const UI = { labelFontSize:16, labelPad:4, pepFontSize:16, pepPad:4, faceBoxWidth:2 };
-let EMO_CONF_MIN = 0.40;          // min konfidens för etikett
-let DETECTOR_SIZE = 320;          // inmatningsstorlek till TinyFaceDetector
-let DETECTOR_SCORE = 0.60;        // scoreThreshold
-
-const HAPPY_WARMUP_SECONDS = 3;   // tid innan glad räknas
-const CONTRIB_WEIGHT_BY_CONF = true;
-
-const RESET_H = 19, RESET_M = 30; // daglig reset av mätare
-
-// Smoothing
-const POSE_ALPHA = 0.15;
-const BBOX_POS_ALPHA  = 0.35;
-const BBOX_SIZE_ALPHA = 0.75;
-
-// Adaptiv input
-const FRAME_OPTS = { ADAPTIVE_INPUT: true, MANY_FACES_THRESHOLD: 3, LOW_INPUT_SIZE: 288 };
-
-// Pepp & ålder
-const AGE_SMOOTH_WINDOW_MS = 10_000;
-
-// Halloween-ghost
-let ghostEnabled = true;
-let ghostFacesOnly = true;
-let ghostMode = 'sometimes'; // rare / sometimes / often
-let ghostAvgSec = 120;       // skrivs över av modeToAvgSec()
-let ghostBgAlpha = 0.88;     // live-bakgrunds opacitet
-let minGapMs=120000;         // minsta gap mellan spök-klipp (~2 min)
-```
-
-Kartläggning för frekvens (i koden):
-
-```js
-function modeToAvgSec(m){
-  if (m==='rare') return 3600;  // 60 min
-  if (m==='often') return 600;  // 10 min
-  return 1800;                  // 30 min (sometimes)
-}
-```
-
-> **Vill du ändra defaultvärdena i UI?** Justera attributen `value`/`checked` på respektive `<input>` i HTML.
+Se toppen av `<script>` i `index.html` för UI/algoritm-konstanter, warmup, smoothing, reset-tid m.m.
 
 ---
 
 ## Vanliga frågor
 
-**Kan jag köra utan internet?**
-Ja – om du hostar alla scripts/statik lokalt (inkl. MediaPipe Selfie Segmentation). I nuvarande kod laddas MediaPipe från jsdelivr. Byt `locateFile` till lokal sökväg och inkludera asset-filerna.
-
-**Loggar ni något?**
-Nej. Allt körs lokalt och logg sparas endast i din webbläsare.
-
-**Hur byter jag tema?**
-Lägg ett `manifest.json` i `img/tema/<namn>/` och välj temat i UI.
-
-**Hur lägger jag till spökklipp?**
-Placera `.mp4` i `ghosts/` och lägg till filnamnen i listan `GHOST_CLIPS` i koden.
-
-**Hur ändrar jag typsnitt/utseende på etiketter/mätare/pepp?**
-Justera `UI`-objektet (fontstorlekar/padding) samt CSS för paneler.
-
-**Fungerar det på en äldre dator?**
-Ja, men sänk *Detector size*, stäng av overlays eller ghost, och/eller låt WASM-backend ta över.
+**Kan jag köra offline?** Ja, om allt hostas lokalt (inkl. MediaPipe-filer).
+**Byta tema?** Lägg `manifest.json` i `img/tema/<namn>` och välj i UI.
+**Lägga till spökklipp?** Lägg `.mp4` i `ghosts/` och lista filerna i koden.
 
 ---
 
-## Avslutning
-
-MoodCam är avsiktligt **självförsörjande**, enkel att hosta och modifiera, och med ett UI som gör de vanligaste valen utan att du behöver ändra kod. Anpassa `pepp.json`, dina **tema-manifest**, och fyll `ghosts/` med korta, smakfulla klipp för bästa upplevelse.
-
-Lycka till – och *SMILE*! 😄
+*Skapad av Kristoffer. Lycka till — och **SMILE**! 😄*
