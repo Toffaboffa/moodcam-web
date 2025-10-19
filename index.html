@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Vialundskolans MoodCam (v.1.4.1)</title>
+  <title>Vialundskolans MoodCam (v.1.4.2)</title>
   <link rel="icon" href="data:,">
 <style>
   :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
@@ -94,6 +94,16 @@
 
   <div id="settings">
     <h3>Settings</h3>
+
+    <!-- ✨ Nytt: Prestandaläge -->
+    <div class="row">
+      <label for="perfMode">Prestandaläge</label>
+      <select id="perfMode" class="btn" style="width:220px">
+        <option value="standard" selected>Standard</option>
+        <option value="light">Light (svagare dator)</option>
+      </select>
+    </div>
+
     <div class="row">
       <label for="camSel">Kamera</label>
       <select id="camSel" class="btn" style="width:220px"></select>
@@ -217,9 +227,14 @@ const EMO_EMOJI = { angry:"😡", disgusted:"🤢", fearful:"😨", happy:"😄"
 const EMO_COLOR = { happy:"#28c728", angry:"#2a2ae0", sad:"#c07800", surprised:"#c0c000", fearful:"#00b4b4", disgusted:"#00a078", neutral:"#b0b0b0" };
 const UI = { labelFontSize:16, labelPad:4, pepFontSize:16, pepPad:4, faceBoxWidth:2 };
 
+/* --- Nu styrs dessa även av preset --- */
 let EMO_CONF_MIN = 0.40;
 let DETECTOR_SIZE = 320;
 let DETECTOR_SCORE = 0.60;
+let MAX_FACES = 4;
+let FRAME_SKIP_N = 0;      // 0 = ingen skip, 1 = hoppa varannan frame, osv.
+let USE_LANDMARKS = true;  // kan stängas i Light-läget
+let SEG_EVERY_N = 1;       // segmentation var N:e frame (1 = varannan, 2 = var tredje, osv.)
 
 let peppEnabled = true;
 let peppCat = 'all';
@@ -358,7 +373,6 @@ function drawVideoWithFilter(ctx, dx, dy, dw, dh) {
 function getSmoothedAge(track, now, latestAge){
   if (latestAge!=null && !Number.isNaN(latestAge)) track.ageHist.push({t:now,a:latestAge});
   const cutoff=now-AGE_SMOOTH_WINDOW_MS; while (track.ageHist.length && track.ageHist[0].t<cutoff) track.ageHist.shift();
-  // Visa inget förrän vi har ett fönster med historik
   if ((now - track.created) < AGE_SMOOTH_WINDOW_MS) return null;
   if (!track.ageHist.length) return null;
   const avg=track.ageHist.reduce((s,p)=>s+p.a,0)/track.ageHist.length; return Math.round(avg);
@@ -708,7 +722,6 @@ function compositeFrame(){
   const hasMask  = !!latestMask;
 
   if (hasMask) {
-    // 1) Spöket som bakgrund (bakom allt) med mjuk fade-in
     if (hasGhost) {
       ghostFade = Math.min(1, ghostFade + GHOST_FADE_IN);
       compCtx.save();
@@ -721,13 +734,11 @@ function compositeFrame(){
       every(60, ()=> tag('Draw','ghost inaktiv (mask)'));
     }
 
-    // 2) Live-bakgrund semi-opak (med filter)
     compCtx.save();
     compCtx.globalAlpha = ghostBgAlpha;
     drawVideoWithFilter(compCtx, 0, 0, composite.width, composite.height);
     compCtx.restore();
 
-    // 3) Person i full opacitet via mask (med filter)
     try {
       const personCanvas = composite.__personCanvas || (composite.__personCanvas = document.createElement('canvas'));
       if (personCanvas.width !== composite.width || personCanvas.height !== composite.height){
@@ -735,25 +746,22 @@ function compositeFrame(){
       }
       const pctx = personCanvas.getContext('2d');
       pctx.clearRect(0,0,personCanvas.width,personCanvas.height);
-      drawVideoWithFilter(pctx, 0, 0, personCanvas.width, personCanvas.height); // ← filter här
+      drawVideoWithFilter(pctx, 0, 0, personCanvas.width, personCanvas.height);
       pctx.globalCompositeOperation = 'destination-in';
-      pctx.drawImage(latestMask, 0, 0, personCanvas.width, personCanvas.height); // maska ut person
+      pctx.drawImage(latestMask, 0, 0, personCanvas.width, personCanvas.height);
       pctx.globalCompositeOperation = 'source-over';
-      compCtx.drawImage(personCanvas, 0, 0); // lägg personen över
+      compCtx.drawImage(personCanvas, 0, 0);
     } catch (e) {
       console.warn('[MoodCam] Mask-render fel, fallback:', e);
       drawVideoWithFilter(compCtx, 0, 0, composite.width, composite.height);
     }
 
   } else {
-    // 🚑 Fallback (ingen mask än):
-    // 1) Rita live-video normalt (med filter)
     drawVideoWithFilter(compCtx, 0, 0, composite.width, composite.height);
 
-    // 2) Rita spöket OVANPÅ med låg opacitet så det syns ändå — med fade-in
     if (hasGhost) {
       ghostFade = Math.min(1, ghostFade + GHOST_FADE_IN);
-      const ghostOverlayAlpha = Math.max(0.08, 1 - ghostBgAlpha) * ghostFade; // t.ex. 0.12 om bgAlpha=0.88
+      const ghostOverlayAlpha = Math.max(0.08, 1 - ghostBgAlpha) * ghostFade;
       compCtx.save();
       compCtx.globalAlpha = ghostOverlayAlpha;
       compCtx.drawImage(ghostEl, 0, 0, composite.width, composite.height);
@@ -765,11 +773,13 @@ function compositeFrame(){
     }
   }
 
-  // Throttle segmentation (som tidigare)
+  // Throttle segmentation: var (SEG_EVERY_N+1):e frame
   if (segReady && seg) {
     try {
-      composite.__segToggle = (composite.__segToggle^1) || 1;
-      if (!composite.__segToggle) seg.send({ image: video });
+      composite.__segCounter = (composite.__segCounter || 0) + 1;
+      if (composite.__segCounter % (SEG_EVERY_N + 1) === 0) {
+        seg.send({ image: video });
+      }
     } catch (e) {
       console.warn('[MoodCam] Segmentation fel – stänger av mask:', e);
       segReady = false; seg = null; latestMask = null;
@@ -788,17 +798,12 @@ function startGhostLoop(){
 
 /* ---------- +1-animationer ---------- */
 const plusOnes = [];
-const PLUS_LIFE = 1.0; // något kortare livstid
+const PLUS_LIFE = 1.0;
 
 function spawnPlusOne(x, y){
   const ang = Math.random()*Math.PI*2;
-  const speed = 40 + Math.random()*100; // px/s
-  plusOnes.push({
-    x, y,
-    vx: Math.cos(ang)*speed,
-    vy: Math.sin(ang)*speed,
-    age: 0
-  });
+  const speed = 40 + Math.random()*100;
+  plusOnes.push({ x, y, vx: Math.cos(ang)*speed, vy: Math.sin(ang)*speed, age: 0 });
 }
 
 function updateAndDrawPlusOnes(dt){
@@ -847,6 +852,12 @@ async function tick(){
     scheduleResetIfNeeded();
     FRAME_I++;
 
+    // Hoppa frames om preset vill
+    if (FRAME_SKIP_N > 0 && (FRAME_I % (FRAME_SKIP_N + 1) === 0)) {
+      requestAnimationFrame(tick);
+      return;
+    }
+
     const now = performance.now();
     const dt = Math.min(0.1, (now - lastFrameTime)/1000); lastFrameTime = now;
 
@@ -857,7 +868,9 @@ async function tick(){
 
     const options = new faceapi.TinyFaceDetectorOptions({ inputSize: DETECTOR_SIZE, scoreThreshold: DETECTOR_SCORE });
     let builder = faceapi.detectAllFaces(video, options);
-    if (LANDMARKS_AVAILABLE && typeof builder.withFaceLandmarks === 'function') builder = builder.withFaceLandmarks();
+    if (USE_LANDMARKS && LANDMARKS_AVAILABLE && typeof builder.withFaceLandmarks === 'function') {
+      builder = builder.withFaceLandmarks();
+    }
     builder = builder.withFaceExpressions().withAgeAndGender();
 
     const detsFull = await builder;
@@ -865,7 +878,7 @@ async function tick(){
     const dets = detsFull
       .slice()
       .sort((a,b)=> (b.detection.box.width*b.detection.box.height) - (a.detection.box.width*a.detection.box.height))
-      .slice(0, 4);
+      .slice(0, MAX_FACES);
     window.__lastFaceCount = dets.length;
 
     let frameHappyAdd = 0;
@@ -891,7 +904,7 @@ async function tick(){
         const t={ id:nextId++, bbox:bbox.slice(), last:now, created:now, seenFrames:0, counted:false,
                   peppText:null, ageHist:[], warm:0, contributing:false, effects:null, pose:{},
                   usePose:false, poseValid:0, poseInvalid:0, emo:'neutral', emoConf:0, lastAge:null,
-                  contribAcc:0 // ack för +1 var hel sekund
+                  contribAcc:0
                 };
         tracks.push(t); if(overlaysEnabled) assignEffects(t);
         best = t;
@@ -899,7 +912,7 @@ async function tick(){
       const tr=best;
 
       // Pose
-      if (det.landmarks){
+      if (USE_LANDMARKS && det.landmarks){
         const lm = det.landmarks;
         const mean = pts => { const n=pts.length; const s=pts.reduce((a,p)=>({x:a.x+p.x,y:a.y+p.y}),{x:0,y:0}); return {x:s.x/n,y:s.y/n}; };
         const dist = (a,b)=> Math.hypot(a.x-b.x,a.y-b.y);
@@ -1022,6 +1035,56 @@ async function tick(){
 function updateLogInfo(){ const list=Object.entries(visitorsByDay).sort(([a],[b])=>a.localeCompare(b)); const txt=list.length? list.map(([d,n])=>`${d}: ${n}`).join(' · ') : 'Ingen logg än.'; const el=document.getElementById('logInfo'); if(el) el.textContent=txt; }
 function downloadCSV(){ const rows=[["date","visitors"],...Object.entries(visitorsByDay)]; const csv=rows.map(r=>r.join(',')).join('\n'); const blob=new Blob([csv],{type:'text/csv'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='moodcam_visitors.csv'; a.click(); URL.revokeObjectURL(a.href); }
 
+/* ---------- Presets ---------- */
+const PERF_KEY = 'moodcam.perfMode';
+
+function applyPreset(mode){
+  // Standardvärden
+  let cfg = {
+    EMO_CONF_MIN: 0.40,
+    DETECTOR_SIZE: 320,
+    DETECTOR_SCORE: 0.60,
+    MAX_FACES: 4,
+    FRAME_SKIP_N: 0,
+    USE_LANDMARKS: true,
+    SEG_EVERY_N: 1
+  };
+
+  if (mode === 'light'){
+    cfg = {
+      EMO_CONF_MIN: 0.40,
+      DETECTOR_SIZE: 256,
+      DETECTOR_SCORE: 0.65,
+      MAX_FACES: 2,
+      FRAME_SKIP_N: 1,      // hoppa varannan
+      USE_LANDMARKS: false, // snabbare
+      SEG_EVERY_N: 3        // skicka var 4:e frame
+    };
+  }
+
+  // Sätt globala
+  EMO_CONF_MIN  = cfg.EMO_CONF_MIN;
+  DETECTOR_SIZE = cfg.DETECTOR_SIZE;
+  DETECTOR_SCORE= cfg.DETECTOR_SCORE;
+  MAX_FACES     = cfg.MAX_FACES;
+  FRAME_SKIP_N  = cfg.FRAME_SKIP_N;
+  USE_LANDMARKS = cfg.USE_LANDMARKS;
+  SEG_EVERY_N   = cfg.SEG_EVERY_N;
+
+  // Synka UI
+  const confEl = document.getElementById('conf');
+  const sizeEl = document.getElementById('inputSize');
+  const scoreEl= document.getElementById('score');
+  if (confEl)  confEl.value  = EMO_CONF_MIN.toFixed(2);
+  if (sizeEl)  sizeEl.value  = String(DETECTOR_SIZE);
+  if (scoreEl) scoreEl.value = DETECTOR_SCORE.toFixed(2);
+
+  // Spara
+  localStorage.setItem(PERF_KEY, mode);
+
+  tag('Perf', 'applyPreset', mode, {EMO_CONF_MIN, DETECTOR_SIZE, DETECTOR_SCORE, MAX_FACES, FRAME_SKIP_N, USE_LANDMARKS, SEG_EVERY_N});
+}
+
 /* ---------- Init ---------- */
 async function init(){
   console.info('[MoodCam] Init… TFJS:', (tf && tf.version_core)||'n/a', 'face-api:', (faceapi && faceapi.version)||'n/a');
@@ -1067,25 +1130,25 @@ async function init(){
     });
   });
   
-const resetBtn = document.getElementById('filtersReset');
-if (resetBtn) resetBtn.addEventListener('click', ()=>{
-  const b = document.getElementById('fBrightness');
-  const c = document.getElementById('fContrast');
-  const s = document.getElementById('fSaturate');
-  const h = document.getElementById('fHue');
-  const t = document.getElementById('fTemp');
-  if (b) b.value = 100;
-  if (c) c.value = 100;
-  if (s) s.value = 100;
-  if (h) h.value =   0;
-  if (t) t.value =   0;
-  CAM_FILTER = buildCamFilterString();
-  video.style.filter = CAM_FILTER;
-});
+  const resetBtn = document.getElementById('filtersReset');
+  if (resetBtn) resetBtn.addEventListener('click', ()=>{
+    const b = document.getElementById('fBrightness');
+    const c = document.getElementById('fContrast');
+    const s = document.getElementById('fSaturate');
+    const h = document.getElementById('fHue');
+    const t = document.getElementById('fTemp');
+    if (b) b.value = 100;
+    if (c) c.value = 100;
+    if (s) s.value = 100;
+    if (h) h.value =   0;
+    if (t) t.value =   0;
+    CAM_FILTER = buildCamFilterString();
+    video.style.filter = CAM_FILTER;
+  });
 
   // initiera filter en gång
-CAM_FILTER = buildCamFilterString();
-video.style.filter = CAM_FILTER;
+  CAM_FILTER = buildCamFilterString();
+  video.style.filter = CAM_FILTER;
 
   document.getElementById('mirrorX').addEventListener('change', e=>{
     MIRROR = e.target.checked; wrap.classList.toggle('mirror', MIRROR);
@@ -1164,6 +1227,13 @@ video.style.filter = CAM_FILTER;
   listCams(1);
   ensureModelsLoading();
   await setupSegmentation();
+
+  // 🔧 Ladda preset från localStorage och koppla UI
+  const perfSel = document.getElementById('perfMode');
+  const savedMode = localStorage.getItem(PERF_KEY) || 'standard';
+  perfSel.value = savedMode;
+  applyPreset(savedMode);
+  perfSel.addEventListener('change', (e)=> applyPreset(e.target.value));
 
   document.getElementById('start').addEventListener('click', async ()=>{
     const modelsOK = await ensureModelsLoading(); if (!modelsOK) return;
