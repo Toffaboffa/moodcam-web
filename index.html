@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Vialundskolans MoodCam (v.1.4.4)</title>
+  <title>Vialundskolans MoodCam (v.1.4.5)</title>
   <link rel="icon" href="data:,">
 <style>
   :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
@@ -635,52 +635,20 @@ const GHOST_FADE_IN = 0.08; // steg per frame
 
 function modeToAvgSec(m){ if (m==='rare') return 3600; if (m==='often') return 600; return 1800; }
 
-function setupSegmentation(){
-  return new Promise((resolve) => {
-    try {
-      const SegClass =
-        (window.SelfieSegmentation && window.SelfieSegmentation.SelfieSegmentation) ||
-        window.SelfieSegmentation;
-
-      if (typeof SegClass !== 'function') {
-        console.warn('[Seg] SelfieSegmentation saknas/okänt API – kör utan mask.');
-        seg = null; segReady = false; latestMask = null;
-        return resolve();
-      }
-
-      seg = new SegClass({
-        locateFile: (file) => `./vendor/mediapipe/selfie_segmentation/${file}`
-      });
-
-      seg.setOptions({ modelSelection: 1 });
-      if (typeof seg.initialize === 'function') seg.initialize().then(
-        ()=> tag('Seg', 'initialize() klar')
-      ).catch(e=> console.warn('[Seg] initialize() fel', e));
-
-      seg.onResults((res) => {
-        latestMask = (res && res.segmentationMask) ? res.segmentationMask : null;
-        every(30, ()=> tag('Seg', 'mask', !!latestMask, latestMask?.width, latestMask?.height));
-      });
-
-      segReady = true;
-      tag('Seg', 'redo:', segReady);
-      resolve();
-    } catch (e) {
-      console.warn('[Seg] Init-fel, kör utan mask:', e);
-      seg = null; segReady = false; latestMask = null;
-      resolve();
-    }
-  });
-}
-
+/* ▶️ Uppdaterad: stöd för "force" */
 function pickGhost(){ return GHOST_CLIPS[Math.floor(Math.random()*GHOST_CLIPS.length)]; }
-async function playGhostOnce(){
-  if (!ghostEnabled)  { tag('Ghost', 'avstängd'); return; }
+async function playGhostOnce(force=false){
+  // force = true => kör oavsett ghostEnabled/minGap/facesOnly
+  if (!force) {
+    if (!ghostEnabled)  { tag('Ghost', 'avstängd'); return; }
+    if ((performance.now() - lastGhostTs) < minGapMs) { tag('Ghost','för tätt inpå'); return; }
+    if (ghostFacesOnly && (window.__lastFaceCount||0) === 0) { tag('Ghost','inga ansikten (blockerad)'); return; }
+  }
   if (playingGhost)   { tag('Ghost', 'spelar redan'); return; }
   if (!GHOST_CLIPS.length){ tag('Ghost','inga klipp'); return; }
 
   const src = pickGhost();
-  tag('Ghost', 'startar', src);
+  tag('Ghost', force ? 'startar (FORCE)' : 'startar', src);
   ghostEl.src = src;
   ghostEl.loop = false;
   ghostEl.currentTime = 0;
@@ -1284,6 +1252,21 @@ async function init(){
     const m = e.target.value;
     await ensureBackendForMode(m); // fortfarande WebGL
     applyPreset(m);
+  });
+
+  /* ⌨️ HEMLIG TANGENT: G = spela spöke direkt (force) */
+  document.addEventListener('keydown', (e)=>{
+    if (e.repeat) return;
+    const active = document.activeElement;
+    const typing = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable);
+    if (typing) return;
+
+    const key = e.key || '';
+    if ((key === 'g' || key === 'G')) {
+      e.preventDefault();
+      tag('Ghost','KB-trigger (G) – FORCE');
+      playGhostOnce(true); // bypass UI/krav
+    }
   });
 
   document.getElementById('start').addEventListener('click', async ()=>{
