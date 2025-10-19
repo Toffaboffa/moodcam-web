@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Vialundskolans MoodCam (v.1.4.5)</title>
+  <title>Vialundskolans MoodCam (v.1.5)</title>
   <link rel="icon" href="data:,">
 <style>
   :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
@@ -39,10 +39,11 @@
   .meterVal{position:absolute;right:6px;top:-16px;opacity:.85}
   .small{font-size:12px;opacity:.8}
 
-  #settings{display:none;position:fixed;right:12px;top:52px;width:360px;max-height:85vh;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px 12px 8px;z-index:20}
-  #settings h3{margin:6px 0 8px 0;font-size:16px}
-  #settings .row{display:flex;justify-content:space-between;align-items:center;margin:8px 0}
-  #settings label{font-size:14px}
+  /* Panler: Settings & OM delar stil */
+  .panel{display:none;position:fixed;right:12px;top:52px;width:360px;max-height:85vh;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px 12px 8px;z-index:20}
+  .panel h3{margin:6px 0 8px 0;font-size:16px}
+  .panel .row{display:flex;justify-content:space-between;align-items:center;margin:8px 0}
+  .panel label{font-size:14px}
 
   details{border:1px dashed var(--border);border-radius:8px;padding:6px;margin-top:8px}
   summary{cursor:pointer}
@@ -50,6 +51,14 @@
   input[type="range"]{width:190px}
   .two-col{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center}
   .hud{position:fixed;left:14px;bottom:14px;font-size:12px;opacity:.7}
+
+  /* Enkel markdown-stil för OM-panelen */
+  #aboutBody { font-size:14px; line-height:1.45 }
+  #aboutBody h1, #aboutBody h2, #aboutBody h3 { margin: 12px 0 8px }
+  #aboutBody code { background:#0d1218; padding:0 4px; border-radius:4px }
+  #aboutBody pre { background:#0d1218; padding:8px; border-radius:8px; overflow:auto }
+  #aboutBody ul { padding-left: 18px }
+  #aboutBody a { color: var(--fg); text-decoration: underline }
 </style>
 <script> 
   /* ---------- Konsolfilter ---------- */
@@ -57,7 +66,7 @@
   const NOISE_PATTERNS = [/already been set/i,/backend was already registered/i,/kernel .* already registered/i,/Reusing existing backend factory/i];
   console.warn = (...a)=>{ const s=(a||[]).join(' '); if (NOISE_PATTERNS.some(r=>r.test(s))) return; ORIG_CONSOLE.warn.apply(console,a); };
   console.info = (...a)=>{ const s=(a||[]).join(' '); if (NOISE_PATTERNS.some(r=>r.test(s))) return; ORIG_CONSOLE.info.apply(console,a); };
-  </script>
+</script>
   <!-- Libs -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.21.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@4.21.0/dist/tf-backend-wasm.min.js"></script>
@@ -69,6 +78,7 @@
   <div class="topbar">
     <button id="start" class="btn">Starta kamera</button>
     <button id="settingsBtn" class="btn" aria-label="Öppna inställningar">Settings</button>
+    <button id="aboutBtn" class="btn" aria-label="Om den här appen">OM</button>
   </div>
 
   <div id="stage">
@@ -92,10 +102,12 @@
     </div>
   </div>
 
-  <div id="settings">
+  <!-- Settings-panelen -->
+  <div id="settings" class="panel">
     <h3>Settings</h3>
+    <p id="verInfo" class="small" style="margin:0 0 6px 0; opacity:.9"></p>
 
-    <!-- ✨ Nytt: Prestandaläge -->
+    <!-- ✨ Prestandaläge -->
     <div class="row">
       <label for="perfMode">Prestandaläge</label>
       <select id="perfMode" class="btn" style="width:220px">
@@ -208,6 +220,12 @@
       </div>
       <p class="small">Nuvarande mål: <span id="goalLabel">300</span> s</p>
     </details>
+  </div>
+
+  <!-- OM-panel som läser in README.md -->
+  <div id="about" class="panel" aria-modal="true" role="dialog">
+    <h3>Om MoodCam</h3>
+    <div id="aboutBody" class="small">Laddar dokumentation…</div>
   </div>
 
   <div class="hud">Allt körs lokalt i datorn. /Kristoffer</div>
@@ -635,7 +653,7 @@ const GHOST_FADE_IN = 0.08; // steg per frame
 
 function modeToAvgSec(m){ if (m==='rare') return 3600; if (m==='often') return 600; return 1800; }
 
-/* ▶️ Uppdaterad: stöd för "force" */
+/* ▶️ Stöd för "force" */
 function pickGhost(){ return GHOST_CLIPS[Math.floor(Math.random()*GHOST_CLIPS.length)]; }
 async function playGhostOnce(force=false){
   // force = true => kör oavsett ghostEnabled/minGap/facesOnly
@@ -1099,11 +1117,103 @@ function applyPreset(mode){
   tag('Perf','applyPreset',mode,{EMO_CONF_MIN,DETECTOR_SIZE,DETECTOR_SCORE,MAX_FACES,FRAME_SKIP_N,USE_LANDMARKS,SEG_EVERY_N,SEG_ENABLED});
 }
 
+/* ---------- OM/README + Version ---------- */
+function escapeHtml(s){ return s.replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+
+function mdToHtml(md){
+  // Skydda code blocks
+  const blocks = [];
+  md = md.replace(/```([\s\S]*?)```/g, (_, code) => {
+    blocks.push(code); return `§§§BLOCK${blocks.length-1}§§§`;
+  });
+
+  // Rubriker
+  md = md.replace(/^### (.*)$/gm, '<h3>$1</h3>')
+         .replace(/^## (.*)$/gm, '<h2>$1</h2>')
+         .replace(/^# (.*)$/gm, '<h1>$1</h1>');
+
+  // Listor
+  md = md.replace(/^(?:-|\*) (.*)$/gm, '<li>$1</li>');
+  md = md.replace(/(<li>[\s\S]*?<\/li>)/g, '<ul>$1</ul>');
+
+  // Bold/italic
+  md = md.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+         .replace(/\*(.+?)\*/g, '<em>$1</em>');
+
+  // Länkar [text](url)
+  md = md.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+
+  // Inline code
+  md = md.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  // Paragrafer
+  md = md.split(/\n{2,}/).map(chunk=>{
+    if (/^<h\d|^<ul>|^<li>|^§§§BLOCK/.test(chunk.trim())) return chunk;
+    return `<p>${chunk.replace(/\n/g,'<br>')}</p>`;
+  }).join('\n');
+
+  // Återställ code blocks
+  md = md.replace(/§§§BLOCK(\d+)§§§/g, (_, i)=> `<pre><code>${escapeHtml(blocks[+i])}</code></pre>`);
+  return md;
+}
+
+let __aboutLoaded = false;
+async function loadAboutOnce(){
+  if (__aboutLoaded) return;
+  try{
+    const r = await fetch('./README.md', { cache:'no-store' });
+    const txt = await r.text();
+    document.getElementById('aboutBody').innerHTML = mdToHtml(txt);
+    __aboutLoaded = true;
+  }catch(e){
+    document.getElementById('aboutBody').textContent = 'Kunde inte läsa README.md';
+    console.error('[OM] fetch README.md fel:', e);
+  }
+}
+
+function toggle(el){ el.style.display = (el.style.display==='none'||!el.style.display) ? 'block' : 'none'; }
+
+function showVersionInSettings(){
+  const t = document.title || '';
+  const m = t.match(/\(v\.([^)]+)\)/i);
+  const v = m ? m[1] : 'okänd';
+  const el = document.getElementById('verInfo');
+  if (el) el.textContent = `Version: v.${v}`;
+}
+
+/* ---------- MediaPipe Selfie Segmentation ---------- */
+async function setupSegmentation(){
+  try{
+    seg = new SelfieSegmentation({ locateFile: (file) => `./vendor/mediapipe/selfie_segmentation/${file}` });
+    seg.setOptions({ modelSelection: 1 }); // 0=landskap, 1=kameranära
+    seg.onResults((res)=>{
+      // res.segmentationMask är ett HTMLCanvasElement (eller HTMLImageElement)
+      // Spara en kopia i latestMask
+      try{
+        const c = document.createElement('canvas');
+        c.width = res.segmentationMask.width;
+        c.height = res.segmentationMask.height;
+        const cctx = c.getContext('2d');
+        cctx.drawImage(res.segmentationMask, 0, 0);
+        latestMask = c;
+        segReady = true;
+      }catch(e){
+        console.warn('[Seg] onResults fel:', e);
+      }
+    });
+    segReady = true;
+    tag('Seg','init ok');
+  }catch(e){
+    segReady = false;
+    console.warn('[Seg] kunde inte initiera:', e);
+  }
+}
+
 /* ---------- Init ---------- */
 async function init(){
   console.info('[MoodCam] Init… TFJS:', (tf && tf.version_core)||'n/a', 'face-api:', (faceapi && faceapi.version)||'n/a');
 
-  // Försök starta på webgl, fallback wasm (innan vi försöker tvinga tillbaka till webgl)
+  // Försök starta på webgl, fallback wasm
   try { await tf.setBackend('webgl'); await tf.ready(); console.info('[MoodCam] TF backend:', tf.getBackend()); }
   catch(e) {
     console.warn('[MoodCam] WebGL misslyckades, provar WASM:', e);
@@ -1127,8 +1237,23 @@ async function init(){
   MIRROR = !!mirrorBox.checked;
   wrap.classList.toggle('mirror', MIRROR);
 
-  // UI handlers
-  document.getElementById('settingsBtn').addEventListener('click', ()=>{ const s=document.getElementById('settings'); s.style.display=(s.style.display==='none'||!s.style.display)?'block':'none'; });
+  // Panel-handlers
+  document.getElementById('settingsBtn').addEventListener('click', ()=>{
+    const s=document.getElementById('settings');
+    toggle(s);
+    document.getElementById('about').style.display='none';
+  });
+  document.getElementById('aboutBtn').addEventListener('click', async ()=>{
+    const a=document.getElementById('about');
+    document.getElementById('settings').style.display='none';
+    await loadAboutOnce();
+    toggle(a);
+  });
+
+  // Visa version i Settings
+  showVersionInSettings();
+
+  // UI handlers för reglage
   document.getElementById('conf').addEventListener('input', e=> EMO_CONF_MIN=parseFloat(e.target.value));
   document.getElementById('inputSize').addEventListener('input', e=> DETECTOR_SIZE=parseInt(e.target.value,10));
   document.getElementById('score').addEventListener('input', e=> DETECTOR_SCORE=parseFloat(e.target.value));
@@ -1266,6 +1391,10 @@ async function init(){
       e.preventDefault();
       tag('Ghost','KB-trigger (G) – FORCE');
       playGhostOnce(true); // bypass UI/krav
+    }
+    if (key === 'Escape'){
+      document.getElementById('settings').style.display = 'none';
+      document.getElementById('about').style.display = 'none';
     }
   });
 
