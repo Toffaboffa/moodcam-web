@@ -146,9 +146,9 @@
       <summary>Kamera – bild (filter)</summary>
       <div class="two-col">
         <label for="fBrightness">Ljusstyrka</label><input id="fBrightness" type="range" min="50" max="150" step="1" value="100">
-        <label for="fContrast">Kontrast</label><input id="fContrast"   type="range" min="50" max="150" step="1" value="100">
-        <label for="fSaturate">Mättnad</label><input id="fSaturate"    type="range" min="0"  max="200" step="1" value="100">
-        <label for="fHue">Ton (°)</label><input id="fHue}             " type="range" min="-180" max="180" step="1" value="0">
+        <label for="fContrast">Kontrast</label><input id="fContrast" type="range" min="50" max="150" step="1" value="100">
+        <label for="fSaturate">Mättnad</label><input id="fSaturate" type="range" min="0"  max="200" step="1" value="100">
+        <label for="fHue">Ton (°)</label><input id="fHue" type="range" min="-180" max="180" step="1" value="0">
         <label for="fTemp">Färgtemperatur</label><input id="fTemp" type="range" min="-50" max="50" step="1" value="0">
         <label for="mirrorX">Spegelvänd bild</label><input id="mirrorX" type="checkbox" checked>
       </div>
@@ -331,15 +331,20 @@ function syncOverlaySize(){
 /* 🔧 Canvas-filter (så reglagen påverkar bilden som syns) */
 let CAM_FILTER = 'none';
 function buildCamFilterString() {
-  const b = +fBrightness.value;
-  const c = +fContrast.value;
-  const s = +fSaturate.value;
-  const h = +fHue.value;
-  const t = +fTemp.value;
-  const temp =
-    t !== 0
-      ? ` sepia(${Math.max(0, t) * 0.006}) hue-rotate(${(t * 1.2).toFixed(1)}deg) saturate(${(100 + t * 0.2).toFixed(1)}%)`
-      : '';
+  const get = (id, def) => {
+    const el = document.getElementById(id);
+    return el ? +el.value : def;
+  };
+  const b = get('fBrightness', 100);
+  const c = get('fContrast',   100);
+  const s = get('fSaturate',   100);
+  const h = get('fHue',          0);
+  const t = get('fTemp',         0);
+
+  const temp = t !== 0
+    ? ` sepia(${Math.max(0, t) * 0.006}) hue-rotate(${(t * 1.2).toFixed(1)}deg) saturate(${(100 + t * 0.2).toFixed(1)}%)`
+    : '';
+
   return `brightness(${b}%) contrast(${c}%) saturate(${s}%) hue-rotate(${h}deg)` + temp;
 }
 function drawVideoWithFilter(ctx, dx, dy, dw, dh) {
@@ -1054,20 +1059,33 @@ async function init(){
   document.getElementById('peppCat').addEventListener('change', e=> { peppCat=e.target.value; });
 
   ['fBrightness','fContrast','fSaturate','fHue','fTemp'].forEach(id=>{
-    document.getElementById(id).addEventListener('input', ()=>{
-      CAM_FILTER = buildCamFilterString();     // ← uppdatera canvas-filtret
-      video.style.filter = CAM_FILTER;         // (valfritt, om videon skulle visas)
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', ()=>{
+      CAM_FILTER = buildCamFilterString();
+      video.style.filter = CAM_FILTER;
     });
   });
-  document.getElementById('filtersReset').addEventListener('click', ()=>{
-    fBrightness.value=100; fContrast.value=100; fSaturate.value=100; fHue.value=0; fTemp.value=0;
-    CAM_FILTER = buildCamFilterString();
-    video.style.filter = CAM_FILTER;
-    const evt=new Event('input'); fBrightness.dispatchEvent(evt);
-  });
-  // initiera filter en gång
+  
+const resetBtn = document.getElementById('filtersReset');
+if (resetBtn) resetBtn.addEventListener('click', ()=>{
+  const b = document.getElementById('fBrightness');
+  const c = document.getElementById('fContrast');
+  const s = document.getElementById('fSaturate');
+  const h = document.getElementById('fHue');
+  const t = document.getElementById('fTemp');
+  if (b) b.value = 100;
+  if (c) c.value = 100;
+  if (s) s.value = 100;
+  if (h) h.value =   0;
+  if (t) t.value =   0;
   CAM_FILTER = buildCamFilterString();
   video.style.filter = CAM_FILTER;
+});
+
+  // initiera filter en gång
+CAM_FILTER = buildCamFilterString();
+video.style.filter = CAM_FILTER;
 
   document.getElementById('mirrorX').addEventListener('change', e=>{
     MIRROR = e.target.checked; wrap.classList.toggle('mirror', MIRROR);
