@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Vialundskolans MoodCam (v.1.4.3)</title>
+  <title>Vialundskolans MoodCam (v.1.4.4)</title>
   <link rel="icon" href="data:,">
 <style>
   :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
@@ -235,6 +235,7 @@ let MAX_FACES = 4;
 let FRAME_SKIP_N = 0;      // 0 = ingen skip, 1 = hoppa varannan frame, osv.
 let USE_LANDMARKS = true;  // kan stängas i Light-läget
 let SEG_EVERY_N = 1;       // segmentation var N:e frame (SEG_EVERY_N+1 i koden)
+let SEG_ENABLED = true;    // styr om vi använder personmask/segmentation i composite
 
 let peppEnabled = true;
 let peppCat = 'all';
@@ -301,6 +302,12 @@ let FRAME_I = 0;
 const visitorsByDay = JSON.parse(localStorage.getItem('moodcam.visitors') || '{}');
 updateLogInfo();
 const AGE_SMOOTH_WINDOW_MS = 10_000;
+
+/* FPS-adaption för mask */
+let fpsEMA = 30;
+const FPS_EMA_A = 0.08;
+const LOW_FPS_OFF = 15;
+const HIGH_FPS_ON = 22;
 
 /* ---------- Hjälp ---------- */
 function todayKey(){ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
@@ -561,11 +568,8 @@ async function startCamera(deviceId){
   try{
     if (currentStream) currentStream.getTracks().forEach(t => t.stop());
 
-    // 🔸 sänk upplösning i "light" för att avlasta GPU/texturer
-    const perf = localStorage.getItem(PERF_KEY) || 'standard';
-    const base = (perf === 'light')
-      ? { width:{ideal:640},  height:{ideal:360}, frameRate:{ideal:30}, facingMode:'user' }
-      : { width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:30}, facingMode:'user' };
+    // 🔒 Samma upplösning i alla lägen (Standard-upplösning)
+    const base = { width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:30}, facingMode:'user' };
 
     const constraints = { audio:false, video: deviceId ? { ...base, deviceId:{ exact: deviceId } } : base };
     currentStream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -726,8 +730,9 @@ function compositeFrame(){
 
   const hasGhost = (!ghostEl.paused && !ghostEl.ended);
   const hasMask  = !!latestMask;
+  const useMask  = SEG_ENABLED && hasMask;
 
-  if (hasMask) {
+  if (useMask) {
     if (hasGhost) {
       ghostFade = Math.min(1, ghostFade + GHOST_FADE_IN);
       compCtx.save();
@@ -786,7 +791,7 @@ function compositeFrame(){
   }
 
   // Throttle segmentation: var (SEG_EVERY_N+1):e frame
-  if (segReady && seg) {
+  if (segReady && seg && SEG_ENABLED) {
     try {
       composite.__segCounter = (composite.__segCounter || 0) + 1;
       if (composite.__segCounter % (SEG_EVERY_N + 1) === 0) {
@@ -794,7 +799,7 @@ function compositeFrame(){
       }
     } catch (e) {
       console.warn('[MoodCam] Segmentation fel – stänger av mask:', e);
-      segReady = false; seg = null; latestMask = null;
+      SEG_ENABLED = false; segReady = false; seg = null; latestMask = null;
     }
   }
 }
@@ -868,11 +873,26 @@ async function tick(){
 
     // Hoppa frames om preset vill
     if (FRAME_SKIP_N > 0 && (FRAME_I % (FRAME_SKIP_N + 1) === 0)) {
+      tf.engine().endScope();
       return requestAnimationFrame(tick);
     }
 
     const now = performance.now();
     const dt = Math.min(0.1, (now - lastFrameTime)/1000); lastFrameTime = now;
+
+    // FPS-EMA
+    const fpsNow = dt > 0 ? 1/dt : 60;
+    fpsEMA = fpsEMA + (fpsNow - fpsEMA) * FPS_EMA_A;
+
+    // Auto-fallback för maskning
+    if (fpsEMA < LOW_FPS_OFF && SEG_ENABLED) {
+      SEG_ENABLED = false;
+      tag('Perf','SEG disabled (low FPS)', fpsEMA.toFixed(1));
+    }
+    if (fpsEMA > HIGH_FPS_ON && !SEG_ENABLED && (localStorage.getItem(PERF_KEY) !== 'light')) {
+      SEG_ENABLED = true;
+      tag('Perf','SEG enabled (FPS recovered)', fpsEMA.toFixed(1));
+    }
 
     if (FRAME_OPTS.ADAPTIVE_INPUT && (window.__lastFaceCount||0) >= FRAME_OPTS.MANY_FACES_THRESHOLD && DETECTOR_SIZE > FRAME_OPTS.LOW_INPUT_SIZE) {
       DETECTOR_SIZE = FRAME_OPTS.LOW_INPUT_SIZE;
@@ -1053,28 +1073,20 @@ function downloadCSV(){ const rows=[["date","visitors"],...Object.entries(visito
 /* ---------- Presets & backend ---------- */
 const PERF_KEY = 'moodcam.perfMode';
 
-async function ensureBackendForMode(mode){
+async function ensureBackendForMode(_mode){
   try{
-    if (mode === 'light') {
-      if (tf.getBackend() !== 'wasm') {
-        await tf.setBackend('wasm');
-        await tf.ready();
-        console.info('[MoodCam] TF backend -> WASM (light)');
-      }
-    } else {
-      if (tf.getBackend() !== 'webgl') {
-        await tf.setBackend('webgl');
-        await tf.ready();
-        console.info('[MoodCam] TF backend -> WebGL (standard)');
-      }
+    if (tf.getBackend() !== 'webgl') {
+      await tf.setBackend('webgl');
+      await tf.ready();
+      console.info('[MoodCam] TF backend -> WebGL (all modes)');
     }
   } catch(e){
-    console.warn('[MoodCam] Backendbyte misslyckades:', e);
+    console.warn('[MoodCam] Kunde inte välja WebGL, kör vidare på', tf.getBackend(), e);
   }
 }
 
 function applyPreset(mode){
-  // Standardvärden
+  // Standard
   let cfg = {
     EMO_CONF_MIN: 0.40,
     DETECTOR_SIZE: 320,
@@ -1082,22 +1094,23 @@ function applyPreset(mode){
     MAX_FACES: 4,
     FRAME_SKIP_N: 0,
     USE_LANDMARKS: true,
-    SEG_EVERY_N: 1
+    SEG_EVERY_N: 1,
+    SEG_ENABLED: true
   };
 
   if (mode === 'light'){
     cfg = {
       EMO_CONF_MIN: 0.40,
-      DETECTOR_SIZE: 256,
+      DETECTOR_SIZE: 224,
       DETECTOR_SCORE: 0.65,
-      MAX_FACES: 2,
-      FRAME_SKIP_N: 1,      // hoppa varannan
+      MAX_FACES: 1,
+      FRAME_SKIP_N: 2,      // processa var 3:e frame
       USE_LANDMARKS: false, // snabbare
-      SEG_EVERY_N: 5        // skicka var 6:e frame
+      SEG_EVERY_N: 999,     // praktiskt taget aldrig
+      SEG_ENABLED: false    // börja utan maskning (kan auto-aktiveras om FPS är bra – men bara i Standard)
     };
   }
 
-  // Sätt globala
   EMO_CONF_MIN  = cfg.EMO_CONF_MIN;
   DETECTOR_SIZE = cfg.DETECTOR_SIZE;
   DETECTOR_SCORE= cfg.DETECTOR_SCORE;
@@ -1105,8 +1118,8 @@ function applyPreset(mode){
   FRAME_SKIP_N  = cfg.FRAME_SKIP_N;
   USE_LANDMARKS = cfg.USE_LANDMARKS;
   SEG_EVERY_N   = cfg.SEG_EVERY_N;
+  SEG_ENABLED   = cfg.SEG_ENABLED;
 
-  // Synka UI
   const confEl = document.getElementById('conf');
   const sizeEl = document.getElementById('inputSize');
   const scoreEl= document.getElementById('score');
@@ -1114,17 +1127,15 @@ function applyPreset(mode){
   if (sizeEl)  sizeEl.value  = String(DETECTOR_SIZE);
   if (scoreEl) scoreEl.value = DETECTOR_SCORE.toFixed(2);
 
-  // Spara
   localStorage.setItem(PERF_KEY, mode);
-
-  tag('Perf', 'applyPreset', mode, {EMO_CONF_MIN, DETECTOR_SIZE, DETECTOR_SCORE, MAX_FACES, FRAME_SKIP_N, USE_LANDMARKS, SEG_EVERY_N});
+  tag('Perf','applyPreset',mode,{EMO_CONF_MIN,DETECTOR_SIZE,DETECTOR_SCORE,MAX_FACES,FRAME_SKIP_N,USE_LANDMARKS,SEG_EVERY_N,SEG_ENABLED});
 }
 
 /* ---------- Init ---------- */
 async function init(){
   console.info('[MoodCam] Init… TFJS:', (tf && tf.version_core)||'n/a', 'face-api:', (faceapi && faceapi.version)||'n/a');
 
-  // Försök starta på webgl, fallback wasm (innan vi byter efter preset)
+  // Försök starta på webgl, fallback wasm (innan vi försöker tvinga tillbaka till webgl)
   try { await tf.setBackend('webgl'); await tf.ready(); console.info('[MoodCam] TF backend:', tf.getBackend()); }
   catch(e) {
     console.warn('[MoodCam] WebGL misslyckades, provar WASM:', e);
@@ -1263,15 +1274,15 @@ async function init(){
   ensureModelsLoading();
   await setupSegmentation();
 
-  // 🔧 Ladda preset från localStorage, byt backend och koppla UI
+  // 🔧 Ladda preset, lås WebGL och koppla UI
   const perfSel = document.getElementById('perfMode');
   const savedMode = localStorage.getItem(PERF_KEY) || 'standard';
   perfSel.value = savedMode;
-  await ensureBackendForMode(savedMode); // ⬅️ välj TF-backend efter preset
+  await ensureBackendForMode(savedMode); // alltid WebGL om möjligt
   applyPreset(savedMode);
   perfSel.addEventListener('change', async (e)=>{
     const m = e.target.value;
-    await ensureBackendForMode(m);
+    await ensureBackendForMode(m); // fortfarande WebGL
     applyPreset(m);
   });
 
