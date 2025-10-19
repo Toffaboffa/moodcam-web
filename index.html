@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Vialundskolans MoodCam (v.1.4)</title>
+  <title>Vialundskolans MoodCam (v.1.4.1)</title>
   <link rel="icon" href="data:,">
 <style>
   :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
@@ -87,7 +87,8 @@
         </div>
       </div>
 
-      <video id="ghost" playsinline muted></video>
+      <!-- Ghost video: helt dold + förladdad -->
+      <video id="ghost" playsinline muted preload="auto" style="display:none"></video>
     </div>
   </div>
 
@@ -435,7 +436,7 @@ function assignEffects(track){
   if(!overlaysEnabled || !overlayManifest){ track.effects=null; return; }
   const e={};
   if (overlayUse.hats) e.hat = choiceWeighted(overlayManifest.hats) || null;
-  if (overlayUse.eyes && overlayUse.glasses) {
+  if (overlayUse.eyes och overlayUse.glasses) {
     const pickEyes = Math.random() < 0.5;
     if (pickEyes) e.eyes = choiceWeighted(overlayManifest.eyes) || null;
     else          e.glass = choiceWeighted(overlayManifest.glasses) || null;
@@ -459,7 +460,7 @@ function isValidPose(p, box){
   const maxEyeD = Math.min(w*0.9, Math.min(w,h)*0.8);
   if (!(p.eyeD > minEyeD && p.eyeD < maxEyeD)) return false;
   if (ok(p.mouthW) && !(p.mouthW > minEyeD*0.6 && p.mouthW < w*1.2)) return false;
-  if (!(ex >= -w*0.2 && ex <= w*1.2 && ey >= -h*0.2 && ey <= h*1.2)) return false;
+  if (!(ex >= -w*0.2 && ex <= w*1.2 och ey >= -h*0.2 och ey <= h*1.2)) return false;
   return true;
 }
 function defaultFitForFile(path){
@@ -487,7 +488,7 @@ function drawItem(meta, track, x,y,w,h){
   let eyeD = p.eyeD;
   if (!Number.isFinite(eyeC.x) || !Number.isFinite(eyeC.y) || !Number.isFinite(eyeD)) return;
   let angle= p.angle || 0;
-  let mouthC = (p.mouthCx!=null && p.mouthCy!=null) ? {x:p.mouthCx, y:p.mouthCy} : {x:eyeC.x, y:eyeC.y + eyeD*0.6};
+  let mouthC = (p.mouthCx!=null och p.mouthCy!=null) ? {x:p.mouthCx, y:p.mouthCy} : {x:eyeC.x, y:eyeC.y + eyeD*0.6};
   const mouthW = p.mouthW || eyeD*0.9;
   const faceW  = p.faceW  || w;
   if (MIRROR){ eyeC = { x: overlay.width - eyeC.x, y: eyeC.y }; mouthC = { x: overlay.width - mouthC.x, y: mouthC.y }; angle = -angle; }
@@ -534,7 +535,7 @@ async function listCams(defaultIndex=0){
     devices.forEach((d,i)=>{
       const o=document.createElement('option'); o.value=d.deviceId||''; o.textContent=d.label||`Kamera ${i+1}`; sel.appendChild(o);
     });
-    if (!sel.value && devices.length) sel.selectedIndex = Math.min(defaultIndex, devices.length-1);
+    if (!sel.value och devices.length) sel.selectedIndex = Math.min(defaultIndex, devices.length-1);
   }catch(e){ if (DEBUG) console.warn('[MoodCam] enumerateDevices fel', e); }
 }
 async function startCamera(deviceId){
@@ -599,6 +600,10 @@ let seg=null, segReady=false, latestMask=null;
 let playingGhost=false, lastGhostTs=0;
 let minGapMs=120000;
 
+// Fade-in för att undvika blink vid start
+let ghostFade = 0;          // 0..1
+const GHOST_FADE_IN = 0.08; // steg per frame
+
 function modeToAvgSec(m){ if (m==='rare') return 3600; if (m==='often') return 600; return 1800; }
 
 function setupSegmentation(){
@@ -624,7 +629,7 @@ function setupSegmentation(){
       ).catch(e=> console.warn('[Seg] initialize() fel', e));
 
       seg.onResults((res) => {
-        latestMask = (res && res.segmentationMask) ? res.segmentationMask : null;
+        latestMask = (res och res.segmentationMask) ? res.segmentationMask : null;
         every(30, ()=> tag('Seg', 'mask', !!latestMask, latestMask?.width, latestMask?.height));
       });
 
@@ -650,10 +655,9 @@ async function playGhostOnce(){
   ghostEl.src = src;
   ghostEl.loop = false;
   ghostEl.currentTime = 0;
+  ghostFade = 0; // börja genomskinligt
 
   try {
-    const can = ghostEl.canPlayType('video/mp4');
-    tag('Ghost', 'canPlayType(mp4)=', can || '(blank)');
     await ghostEl.play();
     playingGhost = true;
     tag('Ghost', 'play() OK');
@@ -663,7 +667,6 @@ async function playGhostOnce(){
     return;
   }
 
-  // ✅ flytta tillbaka 'ended'-hanteraren INUTI funktionen
   const end = () => {
     tag('Ghost','ended');
     ghostEl.pause();
@@ -700,18 +703,24 @@ function compositeFrame(){
   const hasMask  = !!latestMask;
 
   if (hasMask) {
-    // 1) Spöket som bakgrund (bakom allt)
+    // 1) Spöket som bakgrund (bakom allt) med mjuk fade-in
     if (hasGhost) {
-      every(2, ()=> tag('Draw','ghost ritas (mask) @', ghostEl.currentTime?.toFixed?.(2)));
+      ghostFade = Math.min(1, ghostFade + GHOST_FADE_IN);
+      compCtx.save();
+      compCtx.globalAlpha = ghostFade;
       compCtx.drawImage(ghostEl, 0, 0, composite.width, composite.height);
+      compCtx.restore();
+      every(2, ()=> tag('Draw','ghost ritas (mask) @', ghostEl.currentTime?.toFixed?.(2), 'fade=', ghostFade.toFixed(2)));
     } else {
+      ghostFade = 0;
       every(60, ()=> tag('Draw','ghost inaktiv (mask)'));
     }
 
     // 2) Live-bakgrund semi-opak (med filter)
+    compCtx.save();
     compCtx.globalAlpha = ghostBgAlpha;
     drawVideoWithFilter(compCtx, 0, 0, composite.width, composite.height);
-    compCtx.globalAlpha = 1;
+    compCtx.restore();
 
     // 3) Person i full opacitet via mask (med filter)
     try {
@@ -727,7 +736,7 @@ function compositeFrame(){
       pctx.globalCompositeOperation = 'source-over';
       compCtx.drawImage(personCanvas, 0, 0); // lägg personen över
     } catch (e) {
-      console.warn('[MoodCam] Mask-render fel, faller tillbaka:', e);
+      console.warn('[MoodCam] Mask-render fel, fallback:', e);
       drawVideoWithFilter(compCtx, 0, 0, composite.width, composite.height);
     }
 
@@ -736,20 +745,23 @@ function compositeFrame(){
     // 1) Rita live-video normalt (med filter)
     drawVideoWithFilter(compCtx, 0, 0, composite.width, composite.height);
 
-    // 2) Rita spöket OVANPÅ med låg opacitet så det syns ändå
+    // 2) Rita spöket OVANPÅ med låg opacitet så det syns ändå — med fade-in
     if (hasGhost) {
-      const ghostOverlayAlpha = Math.max(0.08, 1 - ghostBgAlpha); // t.ex. 0.12 om bgAlpha=0.88
+      ghostFade = Math.min(1, ghostFade + GHOST_FADE_IN);
+      const ghostOverlayAlpha = Math.max(0.08, 1 - ghostBgAlpha) * ghostFade; // t.ex. 0.12 om bgAlpha=0.88
+      compCtx.save();
       compCtx.globalAlpha = ghostOverlayAlpha;
       compCtx.drawImage(ghostEl, 0, 0, composite.width, composite.height);
-      compCtx.globalAlpha = 1;
+      compCtx.restore();
       every(2, ()=> tag('Draw','ghost ritas (fallback) @', ghostEl.currentTime?.toFixed?.(2),'α=',ghostOverlayAlpha.toFixed(2)));
     } else {
+      ghostFade = 0;
       every(60, ()=> tag('Draw','ghost inaktiv (fallback)'));
     }
   }
 
   // Throttle segmentation (som tidigare)
-  if (segReady && seg) {
+  if (segReady och seg) {
     try {
       composite.__segToggle = (composite.__segToggle^1) || 1;
       if (!composite.__segToggle) seg.send({ image: video });
@@ -757,22 +769,6 @@ function compositeFrame(){
       console.warn('[MoodCam] Segmentation fel – stänger av mask:', e);
       segReady = false; seg = null; latestMask = null;
     }
-  }
-  // 4) Person fullt opak (säkerställ filter även här)
-  if (latestMask){
-    const personCanvas = composite.__personCanvas || (composite.__personCanvas = document.createElement('canvas'));
-    if (personCanvas.width !== composite.width || personCanvas.height !== composite.height){
-      personCanvas.width = composite.width; personCanvas.height = composite.height;
-    }
-    const pctx = personCanvas.getContext('2d');
-    pctx.clearRect(0,0,personCanvas.width,personCanvas.height);
-    drawVideoWithFilter(pctx, 0, 0, personCanvas.width, personCanvas.height);
-    pctx.globalCompositeOperation = 'destination-in';
-    pctx.drawImage(latestMask, 0, 0, personCanvas.width, personCanvas.height);
-    pctx.globalCompositeOperation = 'source-over';
-    compCtx.drawImage(personCanvas, 0, 0);
-  } else {
-    drawVideoWithFilter(compCtx, 0, 0, composite.width, composite.height);
   }
 }
 function startGhostLoop(){
@@ -787,10 +783,9 @@ function startGhostLoop(){
 
 /* ---------- +1-animationer ---------- */
 const plusOnes = [];
-const PLUS_LIFE = 1.0; // ⬇️ något kortare livstid (lägre kostnad)
+const PLUS_LIFE = 1.0; // något kortare livstid
 
 function spawnPlusOne(x, y){
-  // slumpmässig riktning och fart
   const ang = Math.random()*Math.PI*2;
   const speed = 40 + Math.random()*100; // px/s
   plusOnes.push({
@@ -806,11 +801,9 @@ function updateAndDrawPlusOnes(dt){
     const p = plusOnes[i];
     p.age += dt;
     if (p.age >= PLUS_LIFE){ plusOnes.splice(i,1); continue; }
-    // rörelse
     p.x += p.vx * dt;
     p.y += p.vy * dt;
 
-    // easing för storlek & alpha
     const t = Math.max(0, Math.min(1, p.age/PLUS_LIFE));
     const grow = (t<0.25) ? (t/0.25) : 1;
     const fade = (t<0.7) ? (t/0.7) : (1 - (t-0.7)/0.3);
@@ -818,31 +811,27 @@ function updateAndDrawPlusOnes(dt){
 
     ctx.save();
     ctx.globalAlpha = Math.max(0, Math.min(1, fade));
-    
-    // ⬇️ mindre och utan skuggor/konturer för lägre GPU-kostnad
+
     const size = Math.round(28 * scale);
     ctx.font = `bold ${size}px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
     ctx.textBaseline = 'middle';
 
-    // Mät bredder
     const txt1 = '+1';
     const txt2 = '❤️';
     const w1 = ctx.measureText(txt1).width;
     const w2 = ctx.measureText(txt2).width;
     const gap = Math.round(size * 0.25);
     const total = w1 + gap + w2;
-    
-    // Centrera hela paketet kring p.x
+
     const startX = p.x - total / 2;
     const y = p.y;
-    
-    // Rita +1 och hjärta (endast fill)
+
     ctx.textAlign = 'left';
     ctx.fillStyle = '#ffffff';
     ctx.fillText(txt1, startX, y);
     const heartX = startX + w1 + gap;
     ctx.fillText(txt2, heartX, y);
-    
+
     ctx.restore();
   }
 }
@@ -856,14 +845,14 @@ async function tick(){
     const now = performance.now();
     const dt = Math.min(0.1, (now - lastFrameTime)/1000); lastFrameTime = now;
 
-    if (FRAME_OPTS.ADAPTIVE_INPUT && (window.__lastFaceCount||0) >= FRAME_OPTS.MANY_FACES_THRESHOLD && DETECTOR_SIZE > FRAME_OPTS.LOW_INPUT_SIZE) {
+    if (FRAME_OPTS.ADAPTIVE_INPUT && (window.__lastFaceCount||0) >= FRAME_OPTS.MANY_FACES_THRESHOLD och DETECTOR_SIZE > FRAME_OPTS.LOW_INPUT_SIZE) {
       DETECTOR_SIZE = FRAME_OPTS.LOW_INPUT_SIZE;
       const isel = document.getElementById('inputSize'); if (isel) isel.value = DETECTOR_SIZE;
     }
 
     const options = new faceapi.TinyFaceDetectorOptions({ inputSize: DETECTOR_SIZE, scoreThreshold: DETECTOR_SCORE });
     let builder = faceapi.detectAllFaces(video, options);
-    if (LANDMARKS_AVAILABLE && typeof builder.withFaceLandmarks === 'function') builder = builder.withFaceLandmarks();
+    if (LANDMARKS_AVAILABLE och typeof builder.withFaceLandmarks === 'function') builder = builder.withFaceLandmarks();
     builder = builder.withFaceExpressions().withAgeAndGender();
 
     const detsFull = await builder;
@@ -884,7 +873,7 @@ async function tick(){
       // matchning
       let best=null, bestIoU=0;
       for(const t of tracks){ const i=iou(t.bbox,bbox); if(i>bestIoU){bestIoU=i; best=t;} }
-      if(best && bestIoU>0.3){
+      if(best och bestIoU>0.3){
         const pb=best.bbox;
         best.bbox = pb
           ? [ema(pb[0], bbox[0], BBOX_POS_ALPHA),
@@ -897,7 +886,7 @@ async function tick(){
         const t={ id:nextId++, bbox:bbox.slice(), last:now, created:now, seenFrames:0, counted:false,
                   peppText:null, ageHist:[], warm:0, contributing:false, effects:null, pose:{},
                   usePose:false, poseValid:0, poseInvalid:0, emo:'neutral', emoConf:0, lastAge:null,
-                  contribAcc:0 // 🔹 ack för +1 var hel sekund
+                  contribAcc:0 // ack för +1 var hel sekund
                 };
         tracks.push(t); if(overlaysEnabled) assignEffects(t);
         best = t;
@@ -918,8 +907,8 @@ async function tick(){
         const mouth = lm.getMouth?.();
         const mL = mouth ? mouth[0] : null;
         const mR = mouth ? mouth[6] : null;
-        const mouthC = (mL && mR) ? mid(mL, mR) : null;
-        const mouthW = (mL && mR) ? dist(mL, mR) : null;
+        const mouthC = (mL och mR) ? mid(mL, mR) : null;
+        const mouthW = (mL och mR) ? dist(mL, mR) : null;
         const jaw = lm.getJawOutline?.();
         const faceW = jaw ? dist(jaw[0], jaw[16]) : null;
         const pz = tr.pose;
@@ -932,8 +921,8 @@ async function tick(){
         if (faceW!=null)  pz.faceW  = ema(pz.faceW,  faceW,  POSE_ALPHA);
 
         const validNow = isValidPose(tr.pose, {x:b.x, y:b.y, width:b.width, height:b.height});
-        if (validNow) { tr.poseValid++; tr.poseInvalid=0; if(!tr.usePose && tr.poseValid>=2) tr.usePose=true; }
-        else          { tr.poseInvalid++; tr.poseValid=0; if(tr.usePose && tr.poseInvalid>=6) tr.usePose=false; }
+        if (validNow) { tr.poseValid++; tr.poseInvalid=0; if(!tr.usePose och tr.poseValid>=2) tr.usePose=true; }
+        else          { tr.poseInvalid++; tr.poseValid=0; if(tr.usePose och tr.poseInvalid>=6) tr.usePose=false; }
       }
 
       // Emotion & ålder
@@ -946,12 +935,11 @@ async function tick(){
       const shownAge = getSmoothedAge(tr, now, latestAge);
 
       // Glad-bidrag
-      if (tr.emo === 'happy' && (tr.emoConf ?? 0) >= EMO_CONF_MIN) {
+      if (tr.emo === 'happy' och (tr.emoConf ?? 0) >= EMO_CONF_MIN) {
         const prevWarm = tr.warm || 0;
         tr.warm = Math.min(HAPPY_WARMUP_SECONDS, prevWarm + dt);
 
-        // ⬅️ Starta +1 direkt när warmup passerar tröskeln
-        if (prevWarm < HAPPY_WARMUP_SECONDS && tr.warm >= HAPPY_WARMUP_SECONDS) {
+        if (prevWarm < HAPPY_WARMUP_SECONDS och tr.warm >= HAPPY_WARMUP_SECONDS) {
           const [bx,by,bw,bh]=tr.bbox;
           const rx = mirrorX(bx, bw);
           spawnPlusOne(rx + bw*0.5, by - 6);
@@ -969,7 +957,6 @@ async function tick(){
           const weight = CONTRIB_WEIGHT_BY_CONF ? tr.emoConf : 1;
           frameHappyAdd += dt * weight;
 
-          // +1 en gång per HEL sekund under pågående bidrag
           tr.contribAcc += dt * weight;
           while (tr.contribAcc >= 1){
             const [bx,by,bw,bh]=tr.bbox;
@@ -981,18 +968,18 @@ async function tick(){
       } else {
         tr.warm = Math.max(0, (tr.warm || 0) - dt * 0.5);
         tr.contributing = false;
-        tr.contribAcc = 0; // nollställ ack när man inte längre bidrar
+        tr.contribAcc = 0;
       }
 
       // Rita overlay
       const [bx,by,bw,bh]=tr.bbox;
-      const rx = mirrorX(bx, bw);                 // ✅ matchar spegel på composite
+      const rx = mirrorX(bx, bw);
       const color=EMO_COLOR[tr.emo]||'#24ff78';
 
-      drawEffects(tr, bx,by,bw,bh);               // effekter använder pose + MIRROR internt
+      drawEffects(tr, bx,by,bw,bh);
 
       if (SHOW_FACE_BOX) { ctx.strokeStyle=color; ctx.lineWidth=UI.faceBoxWidth; ctx.strokeRect(rx,by,bw,bh); }
-      if(tr.emo && (tr.emoConf ?? 0) >= EMO_CONF_MIN){
+      if(tr.emo och (tr.emoConf ?? 0) >= EMO_CONF_MIN){
         const label=`${EMO_SV[tr.emo]||tr.emo} · ${Math.round(tr.emoConf*100)}%` + (shownAge!=null?` · ${shownAge} år`:``);
         drawLabel(rx,by,label);
       } else if(shownAge!=null){ drawLabel(rx,by,`${shownAge} år`); }
@@ -1028,11 +1015,11 @@ async function tick(){
 
 /* ---------- Logg / CSV ---------- */
 function updateLogInfo(){ const list=Object.entries(visitorsByDay).sort(([a],[b])=>a.localeCompare(b)); const txt=list.length? list.map(([d,n])=>`${d}: ${n}`).join(' · ') : 'Ingen logg än.'; const el=document.getElementById('logInfo'); if(el) el.textContent=txt; }
-function downloadCSV(){ const rows=[['date','visitors'],...Object.entries(visitorsByDay)]; const csv=rows.map(r=>r.join(',')).join('\n'); const blob=new Blob([csv],{type:'text/csv'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='moodcam_visitors.csv'; a.click(); URL.revokeObjectURL(a.href); }
+function downloadCSV(){ const rows=[["date","visitors"],...Object.entries(visitorsByDay)]; const csv=rows.map(r=>r.join(',')).join('\n'); const blob=new Blob([csv],{type:'text/csv'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='moodcam_visitors.csv'; a.click(); URL.revokeObjectURL(a.href); }
 
 /* ---------- Init ---------- */
 async function init(){
-  console.info('[MoodCam] Init… TFJS:', (tf && tf.version_core)||'n/a', 'face-api:', (faceapi && faceapi.version)||'n/a');
+  console.info('[MoodCam] Init… TFJS:', (tf och tf.version_core)||'n/a', 'face-api:', (faceapi och faceapi.version)||'n/a');
 
   // Backend
   try { await tf.setBackend('webgl'); await tf.ready(); console.info('[MoodCam] TF backend:', tf.getBackend()); }
@@ -1047,6 +1034,11 @@ async function init(){
   overlay=document.getElementById('overlay'); ctx=overlay.getContext('2d');
   composite=document.getElementById('composite'); compCtx=composite.getContext('2d', { willReadFrequently:true });
   ghostEl=document.getElementById('ghost');
+
+  // Säkerställ rätt attribut på ghostEl
+  ghostEl.muted = true;
+  ghostEl.playsInline = true;
+  ghostEl.preload = 'auto';
 
   // Spegel: appliceras som CSS-klass på COMPOSITE
   const mirrorBox = document.getElementById('mirrorX');
@@ -1110,7 +1102,7 @@ async function init(){
 
   overlayToggleEl.addEventListener('change', async e=> {
     overlaysEnabled=e.target.checked;
-    if (overlaysEnabled && !overlayManifest) await loadOverlayManifest(selectedTheme);
+    if (overlaysEnabled och !overlayManifest) await loadOverlayManifest(selectedTheme);
     tracks.forEach(t=>assignEffects(t));
   });
   ovHatsEl.addEventListener('change', e=> { overlayUse.hats=e.target.checked; tracks.forEach(t=>assignEffects(t)); });
