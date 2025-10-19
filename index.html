@@ -744,13 +744,21 @@ function compositeFrame(){
       if (personCanvas.width !== composite.width || personCanvas.height !== composite.height){
         personCanvas.width = composite.width; personCanvas.height = composite.height;
       }
+      // NEW (Mediapipe-säkert)
       const pctx = personCanvas.getContext('2d');
       pctx.clearRect(0,0,personCanvas.width,personCanvas.height);
-      drawVideoWithFilter(pctx, 0, 0, personCanvas.width, personCanvas.height);
-      pctx.globalCompositeOperation = 'destination-in';
+      
+      // 1) Rita masken
       pctx.drawImage(latestMask, 0, 0, personCanvas.width, personCanvas.height);
+      
+      // 2) Behåll bara det vi ritar där masken finns (person = synlig)
+      pctx.globalCompositeOperation = 'source-in';
+      drawVideoWithFilter(pctx, 0, 0, personCanvas.width, personCanvas.height);
+      
+      // 3) Återställ och lägg på personlagret opakt
       pctx.globalCompositeOperation = 'source-over';
       compCtx.drawImage(personCanvas, 0, 0);
+
     } catch (e) {
       console.warn('[MoodCam] Mask-render fel, fallback:', e);
       drawVideoWithFilter(compCtx, 0, 0, composite.width, composite.height);
