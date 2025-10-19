@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Vialundskolans MoodCam (v.1.4.2)</title>
+  <title>Vialundskolans MoodCam (v.1.4.3)</title>
   <link rel="icon" href="data:,">
 <style>
   :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
@@ -234,7 +234,7 @@ let DETECTOR_SCORE = 0.60;
 let MAX_FACES = 4;
 let FRAME_SKIP_N = 0;      // 0 = ingen skip, 1 = hoppa varannan frame, osv.
 let USE_LANDMARKS = true;  // kan stängas i Light-läget
-let SEG_EVERY_N = 1;       // segmentation var N:e frame (1 = varannan, 2 = var tredje, osv.)
+let SEG_EVERY_N = 1;       // segmentation var N:e frame (SEG_EVERY_N+1 i koden)
 
 let peppEnabled = true;
 let peppCat = 'all';
@@ -560,7 +560,13 @@ async function listCams(defaultIndex=0){
 async function startCamera(deviceId){
   try{
     if (currentStream) currentStream.getTracks().forEach(t => t.stop());
-    const base = { width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:30}, facingMode:'user' };
+
+    // 🔸 sänk upplösning i "light" för att avlasta GPU/texturer
+    const perf = localStorage.getItem(PERF_KEY) || 'standard';
+    const base = (perf === 'light')
+      ? { width:{ideal:640},  height:{ideal:360}, frameRate:{ideal:30}, facingMode:'user' }
+      : { width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:30}, facingMode:'user' };
+
     const constraints = { audio:false, video: deviceId ? { ...base, deviceId:{ exact: deviceId } } : base };
     currentStream = await navigator.mediaDevices.getUserMedia(constraints);
     video.srcObject = currentStream;
@@ -734,6 +740,7 @@ function compositeFrame(){
       every(60, ()=> tag('Draw','ghost inaktiv (mask)'));
     }
 
+    // Bakgrund (livevideo) med valt alpha
     compCtx.save();
     compCtx.globalAlpha = ghostBgAlpha;
     drawVideoWithFilter(compCtx, 0, 0, composite.width, composite.height);
@@ -744,18 +751,15 @@ function compositeFrame(){
       if (personCanvas.width !== composite.width || personCanvas.height !== composite.height){
         personCanvas.width = composite.width; personCanvas.height = composite.height;
       }
-      // NEW (Mediapipe-säkert)
       const pctx = personCanvas.getContext('2d');
       pctx.clearRect(0,0,personCanvas.width,personCanvas.height);
-      
+
       // 1) Rita masken
       pctx.drawImage(latestMask, 0, 0, personCanvas.width, personCanvas.height);
-      
-      // 2) Behåll bara det vi ritar där masken finns (person = synlig)
+      // 2) Behåll bara det vi ritar där masken finns (person)
       pctx.globalCompositeOperation = 'source-in';
       drawVideoWithFilter(pctx, 0, 0, personCanvas.width, personCanvas.height);
-      
-      // 3) Återställ och lägg på personlagret opakt
+      // 3) Lägg på person-lagret opakt
       pctx.globalCompositeOperation = 'source-over';
       compCtx.drawImage(personCanvas, 0, 0);
 
@@ -857,13 +861,14 @@ function updateAndDrawPlusOnes(dt){
 /* ---------- Huvudloop (detektering/overlay) ---------- */
 async function tick(){
   try{
+    tf.engine().startScope(); // 🔒 hindra GPU/heap-läckor frame för frame
+
     scheduleResetIfNeeded();
     FRAME_I++;
 
     // Hoppa frames om preset vill
     if (FRAME_SKIP_N > 0 && (FRAME_I % (FRAME_SKIP_N + 1) === 0)) {
-      requestAnimationFrame(tick);
-      return;
+      return requestAnimationFrame(tick);
     }
 
     const now = performance.now();
@@ -1035,16 +1040,38 @@ async function tick(){
 
   } catch(err){
     console.error('[MoodCam] tick() error:', err);
+  } finally {
+    tf.engine().endScope(); // 🧹 frigör allt temporärt från denna frame
+    requestAnimationFrame(tick);
   }
-  requestAnimationFrame(tick);
 }
 
 /* ---------- Logg / CSV ---------- */
 function updateLogInfo(){ const list=Object.entries(visitorsByDay).sort(([a],[b])=>a.localeCompare(b)); const txt=list.length? list.map(([d,n])=>`${d}: ${n}`).join(' · ') : 'Ingen logg än.'; const el=document.getElementById('logInfo'); if(el) el.textContent=txt; }
 function downloadCSV(){ const rows=[["date","visitors"],...Object.entries(visitorsByDay)]; const csv=rows.map(r=>r.join(',')).join('\n'); const blob=new Blob([csv],{type:'text/csv'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='moodcam_visitors.csv'; a.click(); URL.revokeObjectURL(a.href); }
 
-/* ---------- Presets ---------- */
+/* ---------- Presets & backend ---------- */
 const PERF_KEY = 'moodcam.perfMode';
+
+async function ensureBackendForMode(mode){
+  try{
+    if (mode === 'light') {
+      if (tf.getBackend() !== 'wasm') {
+        await tf.setBackend('wasm');
+        await tf.ready();
+        console.info('[MoodCam] TF backend -> WASM (light)');
+      }
+    } else {
+      if (tf.getBackend() !== 'webgl') {
+        await tf.setBackend('webgl');
+        await tf.ready();
+        console.info('[MoodCam] TF backend -> WebGL (standard)');
+      }
+    }
+  } catch(e){
+    console.warn('[MoodCam] Backendbyte misslyckades:', e);
+  }
+}
 
 function applyPreset(mode){
   // Standardvärden
@@ -1066,7 +1093,7 @@ function applyPreset(mode){
       MAX_FACES: 2,
       FRAME_SKIP_N: 1,      // hoppa varannan
       USE_LANDMARKS: false, // snabbare
-      SEG_EVERY_N: 3        // skicka var 4:e frame
+      SEG_EVERY_N: 5        // skicka var 6:e frame
     };
   }
 
@@ -1097,7 +1124,7 @@ function applyPreset(mode){
 async function init(){
   console.info('[MoodCam] Init… TFJS:', (tf && tf.version_core)||'n/a', 'face-api:', (faceapi && faceapi.version)||'n/a');
 
-  // Backend
+  // Försök starta på webgl, fallback wasm (innan vi byter efter preset)
   try { await tf.setBackend('webgl'); await tf.ready(); console.info('[MoodCam] TF backend:', tf.getBackend()); }
   catch(e) {
     console.warn('[MoodCam] WebGL misslyckades, provar WASM:', e);
@@ -1236,12 +1263,17 @@ async function init(){
   ensureModelsLoading();
   await setupSegmentation();
 
-  // 🔧 Ladda preset från localStorage och koppla UI
+  // 🔧 Ladda preset från localStorage, byt backend och koppla UI
   const perfSel = document.getElementById('perfMode');
   const savedMode = localStorage.getItem(PERF_KEY) || 'standard';
   perfSel.value = savedMode;
+  await ensureBackendForMode(savedMode); // ⬅️ välj TF-backend efter preset
   applyPreset(savedMode);
-  perfSel.addEventListener('change', (e)=> applyPreset(e.target.value));
+  perfSel.addEventListener('change', async (e)=>{
+    const m = e.target.value;
+    await ensureBackendForMode(m);
+    applyPreset(m);
+  });
 
   document.getElementById('start').addEventListener('click', async ()=>{
     const modelsOK = await ensureModelsLoading(); if (!modelsOK) return;
