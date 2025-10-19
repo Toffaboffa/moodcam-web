@@ -15,8 +15,6 @@ Skapad av **Kristoffer**.
 - Loggar antal ”besökare” per dag lokalt och kan exportera CSV.
 - Kan köras helt offline om du hostar allt lokalt.
 
-> Tips: I appen finns en **OM**-knapp som visar hela den här README:n i ett popup-fönster.
-
 ---
 
 ## Innehåll
@@ -211,12 +209,6 @@ Skapad av **Kristoffer**.
 
 * Fyll `ghosts/`, justera frekvensen, prova **Spela spöke nu 👻**,
   sänk bakgrundsopacitet om spöket drunknar.
-
----
-
-## Konfigurationskonstanter (koden)
-
-Se toppen av `<script>` i `index.html` för UI/algoritm-konstanter, warmup, smoothing, reset-tid m.m.
 
 ---
 
