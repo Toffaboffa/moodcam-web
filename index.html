@@ -10,11 +10,20 @@
   html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,Segoe UI,Roboto,sans-serif}
   #stage{display:grid;grid-template-columns:1fr;gap:16px;height:100vh;align-items:center;justify-items:center;padding:12px}
 
-  .topbar{position:fixed;top:10px;left:10px;display:flex;gap:8px;z-index:10}
+  /* 🔧 Topbar över allt och klickbar */
+  .topbar{
+    position:fixed; top:10px; left:10px; display:flex; gap:8px;
+    z-index:9999;                 /* upp från 10 */
+    pointer-events:auto;          /* säkerställ klickbar */
+  }
   .btn{background:var(--panel2);border:1px solid var(--border);color:var(--fg);padding:8px 12px;border-radius:8px;cursor:pointer}
   .btn:disabled{opacity:.5;cursor:not-allowed}
 
-  .layer-wrap{position:relative;display:inline-block;border-radius:12px;overflow:hidden;box-shadow:0 12px 36px rgba(0,0,0,.5);max-width:96vw;max-height:86vh}
+  .layer-wrap{
+    position:relative;display:inline-block;border-radius:12px;overflow:hidden;
+    box-shadow:0 12px 36px rgba(0,0,0,.5);max-width:96vw;max-height:86vh
+  }
+
   /* Gör canvas till egna kompositionslager (minskar blink vid alpha/transform) */
   .layer-wrap canvas{display:block; will-change:transform, opacity; backface-visibility:hidden; contain:paint;}
 
@@ -26,6 +35,13 @@
     visibility:hidden;
     width:100%; height:auto; position:relative; z-index:0;
   }
+
+  /* 🔒 Blockera inte klick underlagret */
+  .layer-wrap canvas,
+  .layer-wrap video {
+    pointer-events:none;
+  }
+
   #composite{ position:absolute; inset:0; width:100%; height:100%; z-index:0; }
   #overlay{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:1; }
 
@@ -41,8 +57,12 @@
   .meterVal{position:absolute;right:6px;top:-16px;opacity:.85}
   .small{font-size:12px;opacity:.8}
 
-  /* Panler: Settings & OM delar stil */
-  .panel{display:none;position:fixed;right:12px;top:52px;width:360px;max-height:85vh;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px 12px 8px;z-index:20}
+  /* Paneler över renderlagren */
+  .panel{
+    display:none; position:fixed; right:12px; top:52px; width:360px; max-height:85vh; overflow:auto;
+    background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:12px 12px 8px;
+    z-index:10000; /* upp från 20 */
+  }
   .panel h3{margin:6px 0 8px 0;font-size:16px}
   .panel .row{display:flex;justify-content:space-between;align-items:center;margin:8px 0}
   .panel label{font-size:14px}
@@ -62,6 +82,7 @@
   #aboutBody ul { padding-left: 18px }
   #aboutBody a { color: var(--fg); text-decoration: underline }
 </style>
+
 <script>
   /* ---------- Konsolfilter ---------- */
   const ORIG_CONSOLE = { info: console.info, warn: console.warn, log: console.log };
