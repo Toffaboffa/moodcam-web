@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Vialundskolans MoodCam (v.1.5.2)</title>
+  <title>Vialundskolans MoodCam (v.1.5.3)</title>
   <link rel="icon" href="data:,">
 <style>
   :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
@@ -344,7 +344,7 @@ function scheduleResetIfNeeded(){ const now=new Date(); const reset=new Date(); 
 function iou(a,b){
   const [ax,ay,aw,ah] = a, [bx,by,bw,bh] = b;
   const x1 = Math.max(ax, bx), y1 = Math.max(ay, by);
-  const x2 = Math.min(ax + aw, bx + bw), y2 = Math.min(ay + ah, by + bh);
+  const x2 = Math.min(ax + aw, bx + bw), y2 = Math.min(ay + ah, bx + bh);
   const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
   const union = aw * ah + bw * bh - inter;
   return union > 0 ? inter / union : 0;
@@ -675,6 +675,9 @@ function modeToAvgSec(m){ if (m==='rare') return 3600; if (m==='often') return 6
 /* ▶️ Välj klipp & spela */
 function pickGhost(){ return GHOST_CLIPS[Math.floor(Math.random()*GHOST_CLIPS.length)]; }
 async function playGhostOnce(force=false){
+  // 🛡️ Spela inte förrän vi har en mask — då garanteras att personen kan ritas framför
+  if (!latestMask) { tag('Ghost','avbryter: ingen mask än'); return; }
+
   if (!force) {
     if (!ghostEnabled)  { tag('Ghost', 'avstängd'); return; }
     if ((performance.now() - lastGhostTs) < minGapMs) { tag('Ghost','för tätt inpå'); return; }
@@ -708,8 +711,7 @@ async function playGhostOnce(force=false){
     playingGhost = false;
     lastGhostTs = performance.now();
     ghostEl.removeEventListener('ended', end);
-    // valfri fade-out: vi nollställer direkt; vill du tona ut, låt ghostFadeEnabled gälla och låt compositeFrame trappa ned
-    ghostFade = 0;
+    ghostFade = 0; // reset
   };
   ghostEl.addEventListener('ended', end);
 }
@@ -806,7 +808,6 @@ function compositeFrame(){
     drawVideoWithFilter(compCtx, 0, 0, composite.width, composite.height);
 
     if (hasGhost && ghostFade > 0 && ghostOpacity > 0) {
-      // 🔁 Nu oberoende av bakgrund: spökets alpha = fade * vald opacitet
       compCtx.save();
       compCtx.globalAlpha = ghostFade * ghostOpacity;
       drawGhostImage(compCtx, 0, 0, composite.width, composite.height);
@@ -913,12 +914,13 @@ async function tick(){
     const fpsNow = dt > 0 ? 1/dt : 60;
     fpsEMA = fpsEMA + (fpsNow - fpsEMA) * FPS_EMA_A;
 
-    // Auto-fallback för maskning
-    if (fpsEMA < LOW_FPS_OFF && SEG_ENABLED) {
+    // 🛡️ Håll segmentation på när ghost-läget är aktivt/spelar
+    const protectSeg = ghostEnabled || playingGhost;
+    if (!protectSeg && fpsEMA < LOW_FPS_OFF && SEG_ENABLED) {
       SEG_ENABLED = false;
       tag('Perf','SEG disabled (low FPS)', fpsEMA.toFixed(1));
     }
-    if (fpsEMA > HIGH_FPS_ON && !SEG_ENABLED && (localStorage.getItem(PERF_KEY) !== 'light')) {
+    if ((protectSeg || fpsEMA > HIGH_FPS_ON) && !SEG_ENABLED && (localStorage.getItem(PERF_KEY) !== 'light')) {
       SEG_ENABLED = true;
       tag('Perf','SEG enabled (FPS recovered)', fpsEMA.toFixed(1));
     }
@@ -987,8 +989,8 @@ async function tick(){
         const mouth = lm.getMouth?.();
         const mL = mouth ? mouth[0] : null;
         const mR = mouth ? mouth[6] : null;
-        const mouthC = (mL && mR) ? mid(mL, mR) : null;
-        const mouthW = (mL && mR) ? dist(mL, mR) : null;
+        const mouthC = (mL och mR) ? mid(mL, mR) : null;
+        const mouthW = (mL och mR) ? dist(mL, mR) : null;
         const jaw = lm.getJawOutline?.();
         const faceW = jaw ? dist(jaw[0], jaw[16]) : null;
         const pz = tr.pose;
@@ -1081,9 +1083,8 @@ async function tick(){
     document.getElementById('meterFill').style.width = Math.max(0,Math.min(100,meterShown)) + '%';
     document.getElementById('meterVal').textContent = Math.round(meterShown);
 
-    // 🔹 Rita +1-puffar överst (efter allt annat)
-    // (valde att rita dem i composite tidigare; dessa ligger på overlay-lagret)
-    // updateAndDrawPlusOnes(dt); // lämnas om du vill ha dem kvar, annars kommentera
+    // ✅ Hjärt-/+1-animationer (tillbaka)
+    updateAndDrawPlusOnes(dt);
 
     // städa spår
     const tnow=performance.now(); for(let i=tracks.length-1;i>=0;i--) if(tnow-tracks[i].last>1500) tracks.splice(i,1);
