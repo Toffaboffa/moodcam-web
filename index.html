@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Vialundskolans MoodCam (v.1.5.5)</title>
+  <title>Vialundskolans MoodCam (v.1.5.6)</title>
   <link rel="icon" href="data:,">
 <style>
   :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
@@ -366,8 +366,8 @@ const AGE_SMOOTH_WINDOW_MS = 10_000;
 /* FPS-adaption för mask */
 let fpsEMA = 30;
 const FPS_EMA_A = 0.08;
-const LOW_FPS_OFF = 10;
-const HIGH_FPS_ON = 14;
+const LOW_FPS_OFF = 15;
+const HIGH_FPS_ON = 22;
 
 /* ---------- Hjälp ---------- */
 function todayKey(){ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
@@ -706,8 +706,8 @@ function modeToAvgSec(m){ if (m==='rare') return 3600; if (m==='often') return 6
 /* ▶️ Välj klipp & spela */
 function pickGhost(){ return GHOST_CLIPS[Math.floor(Math.random()*GHOST_CLIPS.length)]; }
 async function playGhostOnce(force=false){
-  // 🛡️ Spela inte förrän vi har en mask — men tillåt FORCE
-  if (!latestMask && !force) { tag('Ghost','avbryter: ingen mask än'); return; }
+  // 🛡️ Spela inte förrän vi har en mask — då garanteras att personen kan ritas framför
+  if (!latestMask) { tag('Ghost','avbryter: ingen mask än'); return; }
 
   if (!force) {
     if (!ghostEnabled)  { tag('Ghost', 'avstängd'); return; }
@@ -815,6 +815,7 @@ function compositeFrame(){
 
   /* --- MASK-läge: Ghost → Bakgrund (alpha) → Person (alltid opak) --- */
   if (useMask) {
+    // 1) Spöket bakom (vänta på riktigt frame)
     if (hasGhostFrame && ghostFade > 0 && ghostOpacity > 0){
       compCtx.save();
       compCtx.globalAlpha = ghostFade * ghostOpacity;
@@ -822,11 +823,13 @@ function compositeFrame(){
       compCtx.restore();
     }
 
+    // 2) Bakgrund (livevideo) – mjuk alpha
     compCtx.save();
     compCtx.globalAlpha = Math.max(0, Math.min(1, bgAlphaShown));
     drawVideoWithFilter(compCtx, 0, 0, composite.width, composite.height);
     compCtx.restore();
 
+    // 3) Person-lagret (alltid opakt)
     try {
       const personCanvas = composite.__personCanvas || (composite.__personCanvas = document.createElement('canvas'));
       if (personCanvas.width !== composite.width || personCanvas.height !== composite.height){
@@ -835,9 +838,12 @@ function compositeFrame(){
       const pctx = personCanvas.getContext('2d');
       pctx.clearRect(0,0,personCanvas.width,personCanvas.height);
 
+      // 3a) Rita masken
       pctx.drawImage(latestMask, 0, 0, personCanvas.width, personCanvas.height);
+      // 3b) Behåll bara där masken finns (person)
       pctx.globalCompositeOperation = 'source-in';
       drawVideoWithFilter(pctx, 0, 0, personCanvas.width, personCanvas.height);
+      // 3c) Lägg på person-lagret opakt
       pctx.globalCompositeOperation = 'source-over';
       compCtx.drawImage(personCanvas, 0, 0);
 
@@ -858,22 +864,31 @@ function compositeFrame(){
     }
   }
 
-  // Throttle segmentation: trigga även innan segReady (för att få första masken snabbare)
-  if (seg && SEG_ENABLED) {
+  // Throttle segmentation: var (SEG_EVERY_N+1):e frame, med lås
+  if (segReady && seg && SEG_ENABLED) {
     try {
       composite.__segCounter = (composite.__segCounter || 0) + 1;
       if (!segBusy && composite.__segCounter % (SEG_EVERY_N + 1) === 0) {
         segBusy = true;
         seg.send({ image: video }).catch(e=>{
-          console.warn('[MoodCam] Segmentation send() fel – stänger av mask:', e);
-          SEG_ENABLED = false; segReady = false; seg = null; /* behåll latestMask */
-          segBusy = false;
+          console.warn('[MoodCam] Segmentation send() fel – reinit:', e);
+          // Nolla och försök starta om
+          SEG_ENABLED = false; segReady = false;
+          seg = null; latestMask = null; segBusy = false;
+          setTimeout(async ()=>{
+            await setupSegmentation();
+            SEG_ENABLED = (localStorage.getItem(PERF_KEY) !== 'light');
+          }, 250);
         });
       }
     } catch (e) {
-      console.warn('[MoodCam] Segmentation fel – stänger av mask:', e);
-      SEG_ENABLED = false; segReady = false; seg = null; /* behåll latestMask */
-      segBusy = false;
+      console.warn('[MoodCam] Segmentation fel – reinit:', e);
+      SEG_ENABLED = false; segReady = false;
+      seg = null; latestMask = null; segBusy = false;
+      setTimeout(async ()=>{
+        await setupSegmentation();
+        SEG_ENABLED = (localStorage.getItem(PERF_KEY) !== 'light');
+      }, 250);
     }
   }
 }
@@ -1267,6 +1282,10 @@ async function setupSegmentation(){
   try{
     seg = new SelfieSegmentation({ locateFile: (file) => `./vendor/mediapipe/selfie_segmentation/${file}` });
     seg.setOptions({ modelSelection: 1 });
+
+    // Gör redo direkt så första send() kan trigga init internt
+    segReady = true;
+
     seg.onResults((res)=>{
       try{
         const c = document.createElement('canvas');
@@ -1275,14 +1294,12 @@ async function setupSegmentation(){
         const cctx = c.getContext('2d');
         cctx.drawImage(res.segmentationMask, 0, 0);
         latestMask = c;
-        segReady = true; /* ✅ redo först när vi har första masken */
       }catch(e){
         console.warn('[Seg] onResults fel:', e);
       } finally {
         segBusy = false;
       }
     });
-    // ⛔️ segReady sätts inte här – väntar på första mask
     tag('Seg','init ok');
   }catch(e){
     segReady = false;
@@ -1298,7 +1315,7 @@ async function loadGhostClips(){
     const arr = await res.json();
     const mp4 = (Array.isArray(arr) ? arr : [])
       .filter(x => typeof x === 'string' && /\.mp4$/i.test(x))
-      .map(x => (x.startsWith('ghosts/') ? x : ('ghosts/' + x.replace(/^\.?\//, '')))); // ✅ tre avslutande paranteser
+      .map(x => (x.startsWith('ghosts/') ? x : ('ghosts/' + x.replace(/^\.?\//, ''))));
     if (mp4.length) {
       GHOST_CLIPS = Array.from(new Set(mp4));
       tag('Ghost','manifest.json', GHOST_CLIPS);
@@ -1512,11 +1529,6 @@ async function init(){
     const modelsOK = await ensureModelsLoading(); if (!modelsOK) return;
     const sel=document.getElementById('camSel');
     const ok = await startCamera(sel.value); if (!ok) return;
-
-    // ✅ Kicka igång första masken direkt (hjälper "standard"-läget att komma igång)
-    requestAnimationFrame(() => {
-      try { if (seg && SEG_ENABLED) seg.send({ image: video }); } catch (e) {}
-    });
 
     new ResizeObserver(()=>{ syncOverlaySize(); }).observe(document.getElementById('wrap'));
 
