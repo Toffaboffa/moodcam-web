@@ -1296,14 +1296,13 @@ async function loadGhostClips(){
     const arr = await res.json();
     const mp4 = (Array.isArray(arr) ? arr : [])
       .filter(x => typeof x === 'string' && /\.mp4$/i.test(x))
-      .map(x => x.startsWith('ghosts/') ? x : ('ghosts/' + x.replace(/^\.?\//,''));
+      .map(x => (x.startsWith('ghosts/') ? x : ('ghosts/' + x.replace(/^\.?\//, '')))); // ✅ tre avslutande paranteser
     if (mp4.length) {
       GHOST_CLIPS = Array.from(new Set(mp4));
       tag('Ghost','manifest.json', GHOST_CLIPS);
     }
   }catch(_e){ /* tyst fallback */ }
 }
-
 /* ---------- Init ---------- */
 async function init(){
   console.info('[MoodCam] Init… TFJS:', (tf && tf.version_core)||'n/a', 'face-api:', (faceapi && faceapi.version)||'n/a');
