@@ -989,8 +989,8 @@ async function tick(){
         const mouth = lm.getMouth?.();
         const mL = mouth ? mouth[0] : null;
         const mR = mouth ? mouth[6] : null;
-        const mouthC = (mL och mR) ? mid(mL, mR) : null;
-        const mouthW = (mL och mR) ? dist(mL, mR) : null;
+        const mouthC = (mL && mR) ? mid(mL, mR) : null;
+        const mouthW = (mL && mR) ? dist(mL, mR) : null;
         const jaw = lm.getJawOutline?.();
         const faceW = jaw ? dist(jaw[0], jaw[16]) : null;
         const pz = tr.pose;
