@@ -344,7 +344,7 @@ function scheduleResetIfNeeded(){ const now=new Date(); const reset=new Date(); 
 function iou(a,b){
   const [ax,ay,aw,ah] = a, [bx,by,bw,bh] = b;
   const x1 = Math.max(ax, bx), y1 = Math.max(ay, by);
-  const x2 = Math.min(ax + aw, bx + bw), y2 = Math.min(ay + ah, bx + bh);
+  const x2 = Math.min(ax + aw, bx + bw), y2 = Math.min(ay + ah, by + bh);
   const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
   const union = aw * ah + bw * bh - inter;
   return union > 0 ? inter / union : 0;
@@ -728,6 +728,7 @@ function maybeTriggerGhost(now){
 /* Hjälpare: rita ghostEl med ev. spegel (respekterar dx/dy) */
 function drawGhostImage(ctx, dx, dy, dw, dh){
   ctx.save();
+  ctx.filter = CAM_FILTER; // 🆕 matcha live-videons filter
   if (ghostMirror){
     ctx.translate(dx + dw, dy);
     ctx.scale(-1, 1);
@@ -737,6 +738,10 @@ function drawGhostImage(ctx, dx, dy, dw, dh){
   }
   ctx.restore();
 }
+
+/* 🔄 Mjuk övergång för bakgrundens alpha */
+let bgAlphaShown = 1.0;
+const BG_EASE = 0.18;
 
 /* Rita kompositen */
 function compositeFrame(){
@@ -751,6 +756,7 @@ function compositeFrame(){
   compCtx.clearRect(0,0,composite.width,composite.height);
 
   const hasGhost = (!ghostEl.paused && !ghostEl.ended);
+  const hasGhostFrame = hasGhost && ghostEl.readyState >= 2 && ghostEl.currentTime > 0.02; // 🆕 vänta på första riktiga frame
   const hasMask  = !!latestMask;
   const useMask  = SEG_ENABLED && hasMask;
 
@@ -762,23 +768,25 @@ function compositeFrame(){
     ghostFade = hasGhost ? 1 : 0;
   }
 
+  /* --- Mjuk bakgrundsnivå (1.0 -> ghostBgAlpha) --- */
+  const targetBg = (hasGhostFrame && ghostFade > 0.02) ? ghostBgAlpha : 1.0;
+  bgAlphaShown += (targetBg - bgAlphaShown) * BG_EASE;
+
   /* --- MASK-läge: Ghost → Bakgrund (alpha) → Person (alltid opak) --- */
   if (useMask) {
-    // 1) Spöket bakom
-    if (hasGhost && ghostFade > 0 && ghostOpacity > 0){
+    // 1) Spöket bakom (vänta på riktigt frame)
+    if (hasGhostFrame && ghostFade > 0 && ghostOpacity > 0){
       compCtx.save();
       compCtx.globalAlpha = ghostFade * ghostOpacity;
       drawGhostImage(compCtx, 0, 0, composite.width, composite.height);
       compCtx.restore();
     }
 
-    // 2) Bakgrund (livevideo) – valbar opacitet (0..1)
-    if (ghostBgAlpha > 0){
-      compCtx.save();
-      compCtx.globalAlpha = ghostBgAlpha;
-      drawVideoWithFilter(compCtx, 0, 0, composite.width, composite.height);
-      compCtx.restore();
-    }
+    // 2) Bakgrund (livevideo) – mjuk alpha
+    compCtx.save();
+    compCtx.globalAlpha = Math.max(0, Math.min(1, bgAlphaShown));
+    drawVideoWithFilter(compCtx, 0, 0, composite.width, composite.height);
+    compCtx.restore();
 
     // 3) Person-lagret (alltid opakt)
     try {
@@ -807,7 +815,7 @@ function compositeFrame(){
     /* --- FALLBACK: Live → Spök-overlay (person kan inte maskas) --- */
     drawVideoWithFilter(compCtx, 0, 0, composite.width, composite.height);
 
-    if (hasGhost && ghostFade > 0 && ghostOpacity > 0) {
+    if (hasGhostFrame && ghostFade > 0 && ghostOpacity > 0) {
       compCtx.save();
       compCtx.globalAlpha = ghostFade * ghostOpacity;
       drawGhostImage(compCtx, 0, 0, composite.width, composite.height);
@@ -1163,7 +1171,7 @@ function applyPreset(mode){
 }
 
 /* ---------- OM/README + Version ---------- */
-function escapeHtml(s){ return s.replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+function escapeHtml(s){ return s.replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'':'&#39;' }[c])); }
 
 function mdToHtml(md){
   const blocks = [];
@@ -1247,7 +1255,7 @@ async function loadGhostClips(){
     const arr = await res.json();
     const mp4 = (Array.isArray(arr) ? arr : [])
       .filter(x => typeof x === 'string' && /\.mp4$/i.test(x))
-      .map(x => x.startsWith('ghosts/') ? x : ('ghosts/' + x.replace(/^\.?\//,'')));
+      .map(x => x.startsWith('ghosts/') ? x : ('ghosts/' + x.replace(/^\.?\//,''));
     if (mp4.length) {
       GHOST_CLIPS = Array.from(new Set(mp4));
       tag('Ghost','manifest.json', GHOST_CLIPS);
