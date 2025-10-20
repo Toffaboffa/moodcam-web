@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Vialundskolans MoodCam (v.1.5.1)</title>
+  <title>Vialundskolans MoodCam (v.1.5.2)</title>
   <link rel="icon" href="data:,">
 <style>
   :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
@@ -206,21 +206,21 @@
         <label for="ghostBgAlpha">Bakgrundsgenomskinlighet</label>
         <input id="ghostBgAlpha" type="range" min="0" max="100" step="1" value="88">
       </div>
-      <!-- 🔹 Spökvideon: spegel, transparens, fade -->
       <div class="row">
         <label for="ghostMirrorX">Spegelvänd spökvideon</label><input type="checkbox" id="ghostMirrorX">
       </div>
       <div class="row">
         <label for="ghostAlpha">Spökvideo-transparens</label>
-        <input id="ghostAlpha" type="range" min="0" max="100" step="1" value="100">
+        <input id="ghostAlpha" type="range" min="0" max="100" step="1" value="0">
       </div>
+      <p class="desc">0% = ingen transparens (spöket opakt). 100% = helt osynligt.</p>
       <div class="row">
         <label for="ghostFade">Fade in/ut</label><input type="checkbox" id="ghostFade" checked>
       </div>
       <div class="row">
         <button id="ghostNow" class="btn">Spela spöke nu 👻</button>
       </div>
-      <p class="desc">Spelar korta klipp i bakgrunden. Förgrunden (person) är alltid opak. Spökvideons transparens & fade styrs här.</p>
+      <p class="desc">Spelar korta klipp “bakom” personlagret. Personerna är alltid opaka.</p>
     </details>
 
     <details>
@@ -275,6 +275,7 @@ const THEMES = ["Aktivt (img/manifest.json)","halloween","jul","sommar","skolsta
 let selectedTheme = THEMES[0];
 
 let overlaysEnabled = false;
+/* ❗Startläge synkas i init() från checkboxar – defaulta allt till false här */
 const overlayUse = { hats:false, glasses:false, eyes:false, mouth:false, beard:false };
 
 let overlayManifest = null;
@@ -291,7 +292,7 @@ async function loadAssetMeta(){
 let LANDMARKS_AVAILABLE = false;
 
 let video, overlay, ctx, currentStream=null;
-let composite, compCtx;
+let composite, compCtx; // för spök-komposit
 let ghostEl;
 
 /* Tracks */
@@ -319,7 +320,7 @@ const ema = (prev, next, a)=> (prev==null? next : prev + a*(next - prev));
 /* Spegeltillstånd */
 let MIRROR = true;
 
-/* Face box */
+/* Visa/dölj ansiktsruta – default: osynlig */
 let SHOW_FACE_BOX = false;
 
 /* Adaptiv input */
@@ -595,6 +596,7 @@ async function listCams(defaultIndex=0){
 async function startCamera(deviceId){
   try{
     if (currentStream) currentStream.getTracks().forEach(t => t.stop());
+
     const base = { width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:30}, facingMode:'user' };
     const constraints = { audio:false, video: deviceId ? { ...base, deviceId:{ exact: deviceId } } : base };
     currentStream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -642,50 +644,36 @@ function ensureModelsLoading(){
 }
 
 /* ---------- Spök-komposit ---------- */
-let ghostEnabled = false;
+let ghostEnabled = false;           // ⛔️ AV från start
 let ghostFacesOnly = true;
 let ghostMode = 'rare';
 let ghostAvgSec = 3600;
+
+/* Bakgrundens opacitet (0..1) i mask-läge */
 let ghostBgAlpha = 0.88;
 
-/* 🔹 Spegel & transparens för ghost */
+/* Spegling & transparens för spöket */
 let ghostMirror = false;
-let ghostAlpha = 1.0;
+/* UI anger TRANSPARENS i %, vi omvandlar till OPACITET: opacity = 1 - transparencyPct/100 */
+let ghostTransparencyPct = 0; // 0% transparens = helt opak
+let ghostOpacity = 1.0;       // derived
 
-/* 🔹 Fade on/off och snabbhet */
+/* Fade */
 let ghostFadeEnabled = true;
-let ghostFade = 0;               // 0..1
-const GHOST_FADE_IN = 0.08;      // steg per frame
-const GHOST_FADE_OUT = 0.08;     // steg per frame
-let ghostFadingOut = false;
+let ghostFade = 0;            // 0..1
+const GHOST_FADE_SPEED = 0.08;
 
-/* 🔹 Dynamisk inläsning av alla .mp4 i ghosts/ */
+/* Klipp */
 let GHOST_CLIPS = ['ghosts/penny1.mp4'];
 
-let seg=null, segReady=false, latestMask=null;
+let seg=null, segReady=false, latestMask=null, segBusy=false;
 let playingGhost=false, lastGhostTs=0;
 let minGapMs=120000;
 
-/* Buffert för sista ghost-frame (för mjuk fade-out vid ended) */
-let lastGhostFrameCanvas = null;
-
-/* Hjälpare: rita ghostEl med ev. spegel */
-function drawGhostImage(ctx, dx, dy, dw, dh){
-  if (ghostMirror){
-    ctx.save();
-    ctx.translate(dx + dw, dy);
-    ctx.scale(-1, 1);
-    ctx.drawImage(ghostEl, 0, 0, dw, dh);
-    ctx.restore();
-  } else {
-    ctx.drawImage(ghostEl, dx, dy, dw, dh);
-  }
-}
-
-/* Lägesfunktion för avg-intervall */
 function modeToAvgSec(m){ if (m==='rare') return 3600; if (m==='often') return 600; return 1800; }
 
-/* ▶️ Starta ghost-klipp (force = ignorera spärrar) */
+/* ▶️ Välj klipp & spela */
+function pickGhost(){ return GHOST_CLIPS[Math.floor(Math.random()*GHOST_CLIPS.length)]; }
 async function playGhostOnce(force=false){
   if (!force) {
     if (!ghostEnabled)  { tag('Ghost', 'avstängd'); return; }
@@ -695,14 +683,13 @@ async function playGhostOnce(force=false){
   if (playingGhost)   { tag('Ghost', 'spelar redan'); return; }
   if (!GHOST_CLIPS.length){ tag('Ghost','inga klipp'); return; }
 
-  const src = GHOST_CLIPS[Math.floor(Math.random()*GHOST_CLIPS.length)];
+  const src = pickGhost();
   tag('Ghost', force ? 'startar (FORCE)' : 'startar', src);
   ghostEl.src = src;
   ghostEl.loop = false;
   ghostEl.currentTime = 0;
 
-  ghostFadingOut = false;
-  ghostFade = ghostFadeEnabled ? 0 : 1; // om fade av: starta direkt opakt
+  ghostFade = ghostFadeEnabled ? 0 : 1;
 
   try {
     await ghostEl.play();
@@ -714,33 +701,19 @@ async function playGhostOnce(force=false){
     return;
   }
 
-  // När klippet är slut – välj fade-out eller abrupt stopp
-  const onEnded = () => {
-    tag('Ghost', 'ended');
-    if (ghostFadeEnabled) {
-      // stoppa uppspelning men behåll sista bild i canvas, låt compositeFrame tona ut
-      ghostFadingOut = true;
-      ghostEl.pause(); // behåll frame
-    } else {
-      // inget fade – städa direkt
-      cleanupGhostPlayback();
-    }
-    ghostEl.removeEventListener('ended', onEnded);
+  const end = () => {
+    tag('Ghost','ended');
+    ghostEl.pause();
+    ghostEl.currentTime = 0;
+    playingGhost = false;
+    lastGhostTs = performance.now();
+    ghostEl.removeEventListener('ended', end);
+    // valfri fade-out: vi nollställer direkt; vill du tona ut, låt ghostFadeEnabled gälla och låt compositeFrame trappa ned
+    ghostFade = 0;
   };
-  ghostEl.addEventListener('ended', onEnded);
+  ghostEl.addEventListener('ended', end);
 }
 
-/* Avsluta & nollställ ghost-tillstånd */
-function cleanupGhostPlayback(){
-  try { ghostEl.pause(); } catch {}
-  try { ghostEl.currentTime = 0; } catch {}
-  playingGhost = false;
-  ghostFadingOut = false;
-  ghostFade = 0;
-  lastGhostTs = performance.now();
-}
-
-/* Slumpmässig trigger när mask är aktiv */
 function maybeTriggerGhost(now){
   if (!ghostEnabled || !segReady) return;
   if (playingGhost) return;
@@ -750,7 +723,20 @@ function maybeTriggerGhost(now){
   if (Math.random() < pPerSec * dtSec) playGhostOnce();
 }
 
-/* Rita kompositen (person = alltid opak) */
+/* Hjälpare: rita ghostEl med ev. spegel (respekterar dx/dy) */
+function drawGhostImage(ctx, dx, dy, dw, dh){
+  ctx.save();
+  if (ghostMirror){
+    ctx.translate(dx + dw, dy);
+    ctx.scale(-1, 1);
+    ctx.drawImage(ghostEl, 0, 0, dw, dh);
+  } else {
+    ctx.drawImage(ghostEl, dx, dy, dw, dh);
+  }
+  ctx.restore();
+}
+
+/* Rita kompositen */
 function compositeFrame(){
   if (!composite || !compCtx || !video) return;
   if (video.readyState < 2) return;
@@ -762,72 +748,37 @@ function compositeFrame(){
 
   compCtx.clearRect(0,0,composite.width,composite.height);
 
-  const hasGhostVideo = (!ghostEl.paused && !ghostEl.ended && !ghostFadingOut);
+  const hasGhost = (!ghostEl.paused && !ghostEl.ended);
   const hasMask  = !!latestMask;
   const useMask  = SEG_ENABLED && hasMask;
 
-  // Uppdatera snapshot av ghost varje frame när den spelas
-  if (hasGhostVideo) {
-    if (!lastGhostFrameCanvas){
-      lastGhostFrameCanvas = document.createElement('canvas');
-    }
-    if (lastGhostFrameCanvas.width !== composite.width || lastGhostFrameCanvas.height !== composite.height){
-      lastGhostFrameCanvas.width = composite.width;
-      lastGhostFrameCanvas.height = composite.height;
-    }
-    const gctx = lastGhostFrameCanvas.getContext('2d');
-    gctx.clearRect(0,0,lastGhostFrameCanvas.width,lastGhostFrameCanvas.height);
-    // spegla även i snapshot
-    if (ghostMirror){
-      gctx.save();
-      gctx.translate(lastGhostFrameCanvas.width, 0);
-      gctx.scale(-1, 1);
-      gctx.drawImage(ghostEl, 0, 0, lastGhostFrameCanvas.width, lastGhostFrameCanvas.height);
-      gctx.restore();
-    } else {
-      gctx.drawImage(ghostEl, 0, 0, lastGhostFrameCanvas.width, lastGhostFrameCanvas.height);
-    }
+  /* --- Fade-uppdatering --- */
+  if (ghostFadeEnabled){
+    if (hasGhost) ghostFade = Math.min(1, ghostFade + GHOST_FADE_SPEED);
+    else          ghostFade = Math.max(0, ghostFade - GHOST_FADE_SPEED);
+  } else {
+    ghostFade = hasGhost ? 1 : 0;
   }
 
-  // --- LAYERING ---
-  // Mask-läge: [Ghost]*α  ->  [Live bakgrund]*bgα  ->  [Person (opak)]
-  // Fallback:  [Live] -> [Ghost overlay]*α
+  /* --- MASK-läge: Ghost → Bakgrund (alpha) → Person (alltid opak) --- */
   if (useMask) {
-    // 1) Ghost under (tonas ev. in/ut)
-    const showingGhost = hasGhostVideo || (ghostFadingOut && lastGhostFrameCanvas);
-    if (showingGhost) {
-      // Hantera fade-värde
-      if (ghostFadeEnabled) {
-        if (hasGhostVideo) ghostFade = Math.min(1, ghostFade + GHOST_FADE_IN);
-        else if (ghostFadingOut) {
-          ghostFade = Math.max(0, ghostFade - GHOST_FADE_OUT);
-          if (ghostFade === 0) cleanupGhostPlayback();
-        }
-      } else {
-        ghostFade = 1;
-      }
-
+    // 1) Spöket bakom
+    if (hasGhost && ghostFade > 0 && ghostOpacity > 0){
       compCtx.save();
-      compCtx.globalAlpha = ghostFade * ghostAlpha;
-      if (hasGhostVideo) {
-        // rita direkt från video (med spegel i drawGhostImage)
-        drawGhostImage(compCtx, 0, 0, composite.width, composite.height);
-      } else {
-        // fade-out från snapshot
-        compCtx.drawImage(lastGhostFrameCanvas, 0, 0);
-      }
+      compCtx.globalAlpha = ghostFade * ghostOpacity;
+      drawGhostImage(compCtx, 0, 0, composite.width, composite.height);
       compCtx.restore();
     }
 
-    // 2) Live-bakgrund (kan stängas helt med ghostBgAlpha=0)
-    if (ghostBgAlpha > 0) {
+    // 2) Bakgrund (livevideo) – valbar opacitet (0..1)
+    if (ghostBgAlpha > 0){
       compCtx.save();
       compCtx.globalAlpha = ghostBgAlpha;
       drawVideoWithFilter(compCtx, 0, 0, composite.width, composite.height);
       compCtx.restore();
     }
 
-    // 3) Person (alltid opak)
+    // 3) Person-lagret (alltid opakt)
     try {
       const personCanvas = composite.__personCanvas || (composite.__personCanvas = document.createElement('canvas'));
       if (personCanvas.width !== composite.width || personCanvas.height !== composite.height){
@@ -836,57 +787,49 @@ function compositeFrame(){
       const pctx = personCanvas.getContext('2d');
       pctx.clearRect(0,0,personCanvas.width,personCanvas.height);
 
-      // Rita mask och klipp ut personen (source-in) – detta gör förgrunden helt opak
+      // 3a) Rita masken
       pctx.drawImage(latestMask, 0, 0, personCanvas.width, personCanvas.height);
+      // 3b) Behåll bara där masken finns (person)
       pctx.globalCompositeOperation = 'source-in';
       drawVideoWithFilter(pctx, 0, 0, personCanvas.width, personCanvas.height);
+      // 3c) Lägg på person-lagret opakt
       pctx.globalCompositeOperation = 'source-over';
-
       compCtx.drawImage(personCanvas, 0, 0);
+
     } catch (e) {
       console.warn('[MoodCam] Mask-render fel, fallback:', e);
       drawVideoWithFilter(compCtx, 0, 0, composite.width, composite.height);
     }
 
   } else {
-    // Fallback: rita live först
+    /* --- FALLBACK: Live → Spök-overlay (person kan inte maskas) --- */
     drawVideoWithFilter(compCtx, 0, 0, composite.width, composite.height);
 
-    // Ghost ovanpå
-    const overlayBase = (1 - ghostBgAlpha); // 0..1
-    if (ghostFadeEnabled) {
-      if (hasGhostVideo) ghostFade = Math.min(1, ghostFade + GHOST_FADE_IN);
-      else if (ghostFadingOut && lastGhostFrameCanvas) {
-        ghostFade = Math.max(0, ghostFade - GHOST_FADE_OUT);
-        if (ghostFade === 0) cleanupGhostPlayback();
-      }
-    } else {
-      ghostFade = 1;
-    }
-
-    const showOverlay = hasGhostVideo || (ghostFadingOut && lastGhostFrameCanvas);
-    if (showOverlay) {
-      const ghostOverlayAlpha = overlayBase * ghostFade * ghostAlpha; // ❗ingen minimi-alpha
-      if (ghostOverlayAlpha > 0) {
-        compCtx.save();
-        compCtx.globalAlpha = ghostOverlayAlpha;
-        if (hasGhostVideo) drawGhostImage(compCtx, 0, 0, composite.width, composite.height);
-        else compCtx.drawImage(lastGhostFrameCanvas, 0, 0);
-        compCtx.restore();
-      }
+    if (hasGhost && ghostFade > 0 && ghostOpacity > 0) {
+      // 🔁 Nu oberoende av bakgrund: spökets alpha = fade * vald opacitet
+      compCtx.save();
+      compCtx.globalAlpha = ghostFade * ghostOpacity;
+      drawGhostImage(compCtx, 0, 0, composite.width, composite.height);
+      compCtx.restore();
     }
   }
 
-  // Throttle segmentation: var (SEG_EVERY_N+1):e frame
+  // Throttle segmentation: var (SEG_EVERY_N+1):e frame, med lås
   if (segReady && seg && SEG_ENABLED) {
     try {
       composite.__segCounter = (composite.__segCounter || 0) + 1;
-      if (composite.__segCounter % (SEG_EVERY_N + 1) === 0) {
-        seg.send({ image: video });
+      if (!segBusy && composite.__segCounter % (SEG_EVERY_N + 1) === 0) {
+        segBusy = true;
+        seg.send({ image: video }).catch(e=>{
+          console.warn('[MoodCam] Segmentation send() fel – stänger av mask:', e);
+          SEG_ENABLED = false; segReady = false; seg = null; latestMask = null;
+          segBusy = false;
+        });
       }
     } catch (e) {
       console.warn('[MoodCam] Segmentation fel – stänger av mask:', e);
       SEG_ENABLED = false; segReady = false; seg = null; latestMask = null;
+      segBusy = false;
     }
   }
 }
@@ -966,9 +909,11 @@ async function tick(){
     const now = performance.now();
     const dt = Math.min(0.1, (now - lastFrameTime)/1000); lastFrameTime = now;
 
+    // FPS-EMA
     const fpsNow = dt > 0 ? 1/dt : 60;
     fpsEMA = fpsEMA + (fpsNow - fpsEMA) * FPS_EMA_A;
 
+    // Auto-fallback för maskning
     if (fpsEMA < LOW_FPS_OFF && SEG_ENABLED) {
       SEG_ENABLED = false;
       tag('Perf','SEG disabled (low FPS)', fpsEMA.toFixed(1));
@@ -1129,15 +1074,18 @@ async function tick(){
       }
     }
 
-    // gladtid + mätare
+    // gladtid + mätare (global)
     HAPPY_PERSON_SECONDS += frameHappyAdd;
     const targetPct = Math.min(100, 100*(HAPPY_PERSON_SECONDS/METER_GOAL_SECONDS));
     meterShown = meterShown + (targetPct - meterShown) * METER_EASE;
     document.getElementById('meterFill').style.width = Math.max(0,Math.min(100,meterShown)) + '%';
     document.getElementById('meterVal').textContent = Math.round(meterShown);
 
-    updateAndDrawPlusOnes(dt);
+    // 🔹 Rita +1-puffar överst (efter allt annat)
+    // (valde att rita dem i composite tidigare; dessa ligger på overlay-lagret)
+    // updateAndDrawPlusOnes(dt); // lämnas om du vill ha dem kvar, annars kommentera
 
+    // städa spår
     const tnow=performance.now(); for(let i=tracks.length-1;i>=0;i--) if(tnow-tracks[i].last>1500) tracks.splice(i,1);
 
   } catch(err){
@@ -1168,6 +1116,7 @@ async function ensureBackendForMode(_mode){
 }
 
 function applyPreset(mode){
+  // Standard
   let cfg = {
     EMO_CONF_MIN: 0.40,
     DETECTOR_SIZE: 320,
@@ -1220,24 +1169,19 @@ function mdToHtml(md){
   md = md.replace(/```([\s\S]*?)```/g, (_, code) => {
     blocks.push(code); return `§§§BLOCK${blocks.length-1}§§§`;
   });
-
   md = md.replace(/^### (.*)$/gm, '<h3>$1</h3>')
          .replace(/^## (.*)$/gm, '<h2>$1</h2>')
          .replace(/^# (.*)$/gm, '<h1>$1</h1>');
-
   md = md.replace(/^(?:-|\*) (.*)$/gm, '<li>$1</li>');
   md = md.replace(/(<li>[\s\S]*?<\/li>)/g, '<ul>$1</ul>');
-
   md = md.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
          .replace(/\*(.+?)\*/g, '<em>$1</em>');
-
   md = md.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-
+  md = md.replace(/`([^`]+)`/g, '<code>$1</code>');
   md = md.split(/\n{2,}/).map(chunk=>{
     if (/^<h\d|^<ul>|^<li>|^§§§BLOCK/.test(chunk.trim())) return chunk;
     return `<p>${chunk.replace(/\n/g,'<br>')}</p>`;
   }).join('\n');
-
   md = md.replace(/§§§BLOCK(\d+)§§§/g, (_, i)=> `<pre><code>${escapeHtml(blocks[+i])}</code></pre>`);
   return md;
 }
@@ -1270,7 +1214,7 @@ function showVersionInSettings(){
 async function setupSegmentation(){
   try{
     seg = new SelfieSegmentation({ locateFile: (file) => `./vendor/mediapipe/selfie_segmentation/${file}` });
-    seg.setOptions({ modelSelection: 1 }); // 0=landskap, 1=kameranära
+    seg.setOptions({ modelSelection: 1 });
     seg.onResults((res)=>{
       try{
         const c = document.createElement('canvas');
@@ -1282,6 +1226,8 @@ async function setupSegmentation(){
         segReady = true;
       }catch(e){
         console.warn('[Seg] onResults fel:', e);
+      } finally {
+        segBusy = false;
       }
     });
     segReady = true;
@@ -1292,22 +1238,20 @@ async function setupSegmentation(){
   }
 }
 
-/* ---------- Läs alla .mp4 i ghosts/ om möjligt ---------- */
+/* ---------- Läs ghost-lista ---------- */
 async function loadGhostClips(){
   try{
-    const res = await fetch('./ghosts/', { cache: 'no-store' });
+    const res = await fetch('./ghosts/manifest.json', { cache: 'no-store' });
     if (!res.ok) return;
-    const html = await res.text();
-    const links = Array.from(html.matchAll(/href="([^"]+\.mp4)"/gi)).map(m=>m[1]);
-    const cleaned = links.map(u => u.startsWith('ghosts/') ? u : ('ghosts/' + u.replace(/^\.?\//,'')));
-    const uniq = Array.from(new Set(cleaned));
-    if (uniq.length) {
-      GHOST_CLIPS = uniq;
-      tag('Ghost','fann klipp', GHOST_CLIPS);
+    const arr = await res.json();
+    const mp4 = (Array.isArray(arr) ? arr : [])
+      .filter(x => typeof x === 'string' && /\.mp4$/i.test(x))
+      .map(x => x.startsWith('ghosts/') ? x : ('ghosts/' + x.replace(/^\.?\//,'')));
+    if (mp4.length) {
+      GHOST_CLIPS = Array.from(new Set(mp4));
+      tag('Ghost','manifest.json', GHOST_CLIPS);
     }
-  }catch(e){
-    if (DEBUG) console.warn('[Ghost] kunde inte lista katalogen:', e);
-  }
+  }catch(_e){ /* tyst fallback */ }
 }
 
 /* ---------- Init ---------- */
@@ -1348,10 +1292,9 @@ async function init(){
     toggle(a);
   });
 
-  // Visa version
   showVersionInSettings();
 
-  // UI handlers för reglage
+  // UI handlers
   document.getElementById('conf').addEventListener('input', e=> EMO_CONF_MIN=parseFloat(e.target.value));
   document.getElementById('inputSize').addEventListener('input', e=> DETECTOR_SIZE=parseInt(e.target.value,10));
   document.getElementById('score').addEventListener('input', e=> DETECTOR_SCORE=parseFloat(e.target.value));
@@ -1402,6 +1345,7 @@ async function init(){
     if (overlaysEnabled) { await loadOverlayManifest(selectedTheme); tracks.forEach(t=>assignEffects(t)); }
   });
 
+  // Overlays startläge
   const overlayToggleEl = document.getElementById('overlayToggle');
   const ovHatsEl = document.getElementById('ovHats');
   const ovGlassesEl = document.getElementById('ovGlasses');
@@ -1409,7 +1353,7 @@ async function init(){
   const ovMouthEl = document.getElementById('ovMouth');
   const ovBeardEl = document.getElementById('ovBeard');
 
-  overlaysEnabled = overlayToggleEl.checked;
+  overlaysEnabled = overlayToggleEl.checked; // false
   overlayUse.hats   = ovHatsEl.checked;
   overlayUse.glasses= ovGlassesEl.checked;
   overlayUse.eyes   = ovEyesEl.checked;
@@ -1447,15 +1391,16 @@ async function init(){
   ghostEl.addEventListener('play', ()=> tag('Ghost','play'));
   ghostEl.addEventListener('pause', ()=> tag('Ghost','pause'));
   ghostEl.addEventListener('error', ()=> console.error('[Ghost] video error', ghostEl.error));
-  document.getElementById('ghostNow').addEventListener('click', ()=> { tag('Ghost','knapp: spela nu'); playGhostOnce(); });
+  document.getElementById('ghostNow').addEventListener('click', ()=> { tag('Ghost','knapp: spela nu (FORCE)'); playGhostOnce(true); });
 
-  // Startvärden
+  // ⛔️ Startläge: av
   ghostEnabled = ghostToggle.checked;
   ghostMode = ghostModeSel.value; ghostAvgSec = modeToAvgSec(ghostMode);
   ghostFacesOnly = ghostFacesOnlyEl.checked;
   ghostBgAlpha = parseInt(ghostBgAlphaEl.value,10)/100;
   ghostMirror = !!ghostMirrorEl.checked;
-  ghostAlpha = parseInt(ghostAlphaEl.value,10)/100;
+  ghostTransparencyPct = parseInt(ghostAlphaEl.value,10) || 0;
+  ghostOpacity = Math.max(0, Math.min(1, 1 - (ghostTransparencyPct/100)));
   ghostFadeEnabled = !!ghostFadeEl.checked;
 
   ghostToggle.addEventListener('change', e=>{ ghostEnabled = e.target.checked; tag('Ghost','enabled=', ghostEnabled); });
@@ -1463,8 +1408,16 @@ async function init(){
   ghostFacesOnlyEl.addEventListener('change', e=>{ ghostFacesOnly = e.target.checked; tag('Ghost','facesOnly=',ghostFacesOnly); });
   ghostBgAlphaEl.addEventListener('input', e=>{ ghostBgAlpha = parseInt(e.target.value,10)/100; tag('Ghost','bgAlpha=',ghostBgAlpha); });
   ghostMirrorEl.addEventListener('change', e=>{ ghostMirror = e.target.checked; tag('Ghost','mirror=',ghostMirror); });
-  ghostAlphaEl.addEventListener('input',  e=>{ ghostAlpha = parseInt(e.target.value,10)/100; tag('Ghost','alpha=',ghostAlpha); });
-  ghostFadeEl.addEventListener('change',  e=>{ ghostFadeEnabled = e.target.checked; tag('Ghost','fadeEnabled=',ghostFadeEnabled); });
+  ghostAlphaEl.addEventListener('input',  e=>{
+    ghostTransparencyPct = parseInt(e.target.value,10) || 0;
+    ghostOpacity = Math.max(0, Math.min(1, 1 - (ghostTransparencyPct/100)));
+    tag('Ghost','transparency%=',ghostTransparencyPct,'opacity=',ghostOpacity.toFixed(2));
+  });
+  ghostFadeEl.addEventListener('change', e=>{
+    ghostFadeEnabled = e.target.checked;
+    tag('Ghost','fadeEnabled=',ghostFadeEnabled);
+    if (!ghostFadeEnabled) ghostFade = playingGhost ? 1 : 0;
+  });
 
   await loadAssetMeta();
   await loadPepp();
@@ -1473,7 +1426,7 @@ async function init(){
   await setupSegmentation();
   await loadGhostClips();
 
-  // Preset & backend
+  // 🔧 Ladda preset, lås WebGL och koppla UI
   const perfSel = document.getElementById('perfMode');
   const savedMode = localStorage.getItem(PERF_KEY) || 'standard';
   perfSel.value = savedMode;
@@ -1485,7 +1438,7 @@ async function init(){
     applyPreset(m);
   });
 
-  /* ⌨️ G = FORCE ghost */
+  /* ⌨️ HEMLIG TANGENT: G = spela spöke direkt (force) */
   document.addEventListener('keydown', (e)=>{
     if (e.repeat) return;
     const active = document.activeElement;
