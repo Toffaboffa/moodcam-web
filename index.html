@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Vialundskolans MoodCam (v.1.5.4)</title>
+  <title>Vialundskolans MoodCam (v.1.5.5)</title>
   <link rel="icon" href="data:,">
 <style>
   :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
@@ -25,15 +25,22 @@
   }
 
   /* Gör canvas till egna kompositionslager (minskar blink vid alpha/transform) */
-  .layer-wrap canvas{display:block; will-change:transform, opacity; backface-visibility:hidden; contain:paint;}
+  .layer-wrap canvas{
+    display:block; will-change:transform, opacity; backface-visibility:hidden; contain:paint;
+    transform: translateZ(0); /* tvinga GPU-lager */
+  }
 
   /* ❗Spegelvänd **composite** (det användaren ser), inte <video> */
   .layer-wrap.mirror #composite { transform: scaleX(-1); }
 
-  /* Råvideo hålls gömd men driver storlek & är källa till analyser */
+  /* Råvideo hålls osynlig men renderas (motverkar svarta frames) */
   #video{
-    visibility:hidden;
-    width:100%; height:auto; position:relative; z-index:0;
+    opacity:0;
+    position:absolute; inset:0;
+    width:100%; height:100%;
+    object-fit:cover;
+    z-index:0;
+    pointer-events:none;
   }
 
   /* 🔒 Blockera inte klick underlagret */
@@ -864,13 +871,13 @@ function compositeFrame(){
         segBusy = true;
         seg.send({ image: video }).catch(e=>{
           console.warn('[MoodCam] Segmentation send() fel – stänger av mask:', e);
-          SEG_ENABLED = false; segReady = false; seg = null; latestMask = null;
+          SEG_ENABLED = false; segReady = false; seg = null; /* behåll latestMask */
           segBusy = false;
         });
       }
     } catch (e) {
       console.warn('[MoodCam] Segmentation fel – stänger av mask:', e);
-      SEG_ENABLED = false; segReady = false; seg = null; latestMask = null;
+      SEG_ENABLED = false; segReady = false; seg = null; /* behåll latestMask */
       segBusy = false;
     }
   }
@@ -1273,14 +1280,14 @@ async function setupSegmentation(){
         const cctx = c.getContext('2d');
         cctx.drawImage(res.segmentationMask, 0, 0);
         latestMask = c;
-        segReady = true;
+        segReady = true; /* ✅ redo först när vi har första masken */
       }catch(e){
         console.warn('[Seg] onResults fel:', e);
       } finally {
         segBusy = false;
       }
     });
-    segReady = true;
+    // ⛔️ segReady sätts inte här – väntar på första mask
     tag('Seg','init ok');
   }catch(e){
     segReady = false;
