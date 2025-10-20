@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Vialundskolans MoodCam (v.1.5)</title>
+  <title>Vialundskolans MoodCam (v.1.5.1)</title>
   <link rel="icon" href="data:,">
 <style>
   :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
@@ -203,8 +203,11 @@
         <label for="ghostFacesOnly">Bara när någon syns</label><input type="checkbox" id="ghostFacesOnly" checked>
       </div>
       <div class="row">
-        <label for="ghostBgAlpha">Bakgrundsgenomskinlighet</label>
-        <input id="ghostBgAlpha" type="range" min="60" max="100" step="1" value="88">
+        <label for="ghostMirror">Spegelvänd spöke</label><input type="checkbox" id="ghostMirror">
+      </div>
+      <div class="row">
+        <label for="ghostBgTrans">Bakgrunds-transparens</label>
+        <input id="ghostBgTrans" type="range" min="0" max="90" step="1" value="12">
       </div>
       <div class="row">
         <button id="ghostNow" class="btn">Spela spöke nu 👻</button>
@@ -639,7 +642,8 @@ let ghostEnabled = false;           // ⛔️ AV från start
 let ghostFacesOnly = true;
 let ghostMode = 'rare';
 let ghostAvgSec = 3600;
-let ghostBgAlpha = 0.88;
+let ghostBgAlpha = 0.88;            // α = 1 - (transparens)
+let ghostMirror = false;            // 🔁 ny: spegla spöke separat
 
 const GHOST_CLIPS = ['ghosts/penny1.mp4'];
 
@@ -702,6 +706,18 @@ function maybeTriggerGhost(now){
   if (Math.random() < pPerSec * dtSec) playGhostOnce();
 }
 
+/* Hjälpfunktion: rita spöket, ev. spegelvänt */
+function drawGhost(ctx, w, h){
+  if (!ghostEl) return;
+  ctx.save();
+  if (ghostMirror){
+    ctx.translate(w, 0);
+    ctx.scale(-1, 1);
+  }
+  ctx.drawImage(ghostEl, 0, 0, w, h);
+  ctx.restore();
+}
+
 /* Rita kompositen */
 function compositeFrame(){
   if (!composite || !compCtx || !video) return;
@@ -723,7 +739,7 @@ function compositeFrame(){
       ghostFade = Math.min(1, ghostFade + GHOST_FADE_IN);
       compCtx.save();
       compCtx.globalAlpha = ghostFade;
-      compCtx.drawImage(ghostEl, 0, 0, composite.width, composite.height);
+      drawGhost(compCtx, composite.width, composite.height);   // ⬅️ spegling här
       compCtx.restore();
       every(2, ()=> tag('Draw','ghost ritas (mask) @', ghostEl.currentTime?.toFixed?.(2), 'fade=', ghostFade.toFixed(2)));
     } else {
@@ -731,7 +747,7 @@ function compositeFrame(){
       every(60, ()=> tag('Draw','ghost inaktiv (mask)'));
     }
 
-    // Bakgrund (livevideo) med valt alpha
+    // Bakgrund (livevideo) med valt alpha (α = 1 - transparens)
     compCtx.save();
     compCtx.globalAlpha = ghostBgAlpha;
     drawVideoWithFilter(compCtx, 0, 0, composite.width, composite.height);
@@ -767,7 +783,7 @@ function compositeFrame(){
       const ghostOverlayAlpha = Math.max(0.08, 1 - ghostBgAlpha) * ghostFade;
       compCtx.save();
       compCtx.globalAlpha = ghostOverlayAlpha;
-      compCtx.drawImage(ghostEl, 0, 0, composite.width, composite.height);
+      drawGhost(compCtx, composite.width, composite.height);   // ⬅️ spegling här
       compCtx.restore();
       every(2, ()=> tag('Draw','ghost ritas (fallback) @', ghostEl.currentTime?.toFixed?.(2),'α=',ghostOverlayAlpha.toFixed(2)));
     } else {
@@ -1187,8 +1203,6 @@ async function setupSegmentation(){
     seg = new SelfieSegmentation({ locateFile: (file) => `./vendor/mediapipe/selfie_segmentation/${file}` });
     seg.setOptions({ modelSelection: 1 }); // 0=landskap, 1=kameranära
     seg.onResults((res)=>{
-      // res.segmentationMask är ett HTMLCanvasElement (eller HTMLImageElement)
-      // Spara en kopia i latestMask
       try{
         const c = document.createElement('canvas');
         c.width = res.segmentationMask.width;
@@ -1342,7 +1356,8 @@ async function init(){
   const ghostToggle = document.getElementById('ghostToggle');
   const ghostModeSel = document.getElementById('ghostMode');
   const ghostFacesOnlyEl = document.getElementById('ghostFacesOnly');
-  const ghostBgAlphaEl = document.getElementById('ghostBgAlpha');
+  const ghostMirrorEl = document.getElementById('ghostMirror');
+  const ghostBgTransEl = document.getElementById('ghostBgTrans');
 
   ghostEl.addEventListener('loadeddata', ()=> tag('Ghost','loadeddata', ghostEl.videoWidth, ghostEl.videoHeight));
   ghostEl.addEventListener('play', ()=> tag('Ghost','play'));
@@ -1354,12 +1369,19 @@ async function init(){
   ghostEnabled = ghostToggle.checked;       // false
   ghostMode = ghostModeSel.value; ghostAvgSec = modeToAvgSec(ghostMode);
   ghostFacesOnly = ghostFacesOnlyEl.checked;
-  ghostBgAlpha = parseInt(ghostBgAlphaEl.value,10)/100;
+  ghostMirror = ghostMirrorEl.checked;
+  // Transparens 0..90% -> α = 1 - transparens
+  ghostBgAlpha = 1 - (parseInt(ghostBgTransEl.value,10)/100);
 
   ghostToggle.addEventListener('change', e=>{ ghostEnabled = e.target.checked; tag('Ghost','enabled=', ghostEnabled); });
   ghostModeSel.addEventListener('change', e=>{ ghostMode = e.target.value; ghostAvgSec = modeToAvgSec(ghostMode); tag('Ghost','mode=',ghostMode,'avgSec=',ghostAvgSec); });
   ghostFacesOnlyEl.addEventListener('change', e=>{ ghostFacesOnly = e.target.checked; tag('Ghost','facesOnly=',ghostFacesOnly); });
-  ghostBgAlphaEl.addEventListener('input', e=>{ ghostBgAlpha = parseInt(e.target.value,10)/100; tag('Ghost','bgAlpha=',ghostBgAlpha); });
+  ghostMirrorEl.addEventListener('change', e=>{ ghostMirror = e.target.checked; tag('Ghost','mirror=',ghostMirror); });
+  ghostBgTransEl.addEventListener('input', e=>{
+    const trans = Math.min(90, Math.max(0, parseInt(e.target.value,10)||0));
+    ghostBgAlpha = 1 - (trans/100);
+    tag('Ghost','bgTrans=',trans,'alpha=',ghostBgAlpha.toFixed(2));
+  });
 
   await loadAssetMeta();
   await loadPepp();
