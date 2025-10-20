@@ -366,8 +366,8 @@ const AGE_SMOOTH_WINDOW_MS = 10_000;
 /* FPS-adaption för mask */
 let fpsEMA = 30;
 const FPS_EMA_A = 0.08;
-const LOW_FPS_OFF = 15;
-const HIGH_FPS_ON = 22;
+const LOW_FPS_OFF = 10;
+const HIGH_FPS_ON = 14;
 
 /* ---------- Hjälp ---------- */
 function todayKey(){ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
