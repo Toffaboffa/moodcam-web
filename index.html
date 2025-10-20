@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Vialundskolans MoodCam (v.1.5)</title>
+  <title>Vialundskolans MoodCam (v.1.5.1)</title>
   <link rel="icon" href="data:,">
 <style>
   :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
@@ -653,10 +653,10 @@ let ghostBgAlpha = 0.88;
 let ghostMirror = false;
 let ghostAlpha = 1.0;
 
-/* 🔹 NYTT: dynamisk inläsning av alla .mp4 i ghosts/ */
+/* 🔹 NYTT: manifest-baserad ghost-lista */
 let GHOST_CLIPS = ['ghosts/penny1.mp4'];
 
-let seg=null, segReady=false, latestMask=null;
+let seg=null, segReady=false, latestMask=null, segBusy=false; /* 🔒 NYTT: lås */
 let playingGhost=false, lastGhostTs=0;
 let minGapMs=120000;
 
@@ -715,17 +715,17 @@ function maybeTriggerGhost(now){
   if (Math.random() < pPerSec * dtSec) playGhostOnce();
 }
 
-/* Hjälpare: rita ghostEl med ev. spegel */
+/* Hjälpare: rita ghostEl med ev. spegel (respekterar dx/dy) */
 function drawGhostImage(ctx, dx, dy, dw, dh){
+  ctx.save();
   if (ghostMirror){
-    ctx.save();
-    ctx.translate(dw, 0);
+    ctx.translate(dx + dw, dy);
     ctx.scale(-1, 1);
     ctx.drawImage(ghostEl, 0, 0, dw, dh);
-    ctx.restore();
   } else {
     ctx.drawImage(ghostEl, dx, dy, dw, dh);
   }
+  ctx.restore();
 }
 
 /* Rita kompositen */
@@ -748,8 +748,8 @@ function compositeFrame(){
     if (hasGhost) {
       ghostFade = Math.min(1, ghostFade + GHOST_FADE_IN);
       compCtx.save();
-      compCtx.globalAlpha = ghostFade * ghostAlpha;              /* 🔹 transparens */
-      drawGhostImage(compCtx, 0, 0, composite.width, composite.height); /* 🔹 spegelstöd */
+      compCtx.globalAlpha = ghostFade * ghostAlpha;
+      drawGhostImage(compCtx, 0, 0, composite.width, composite.height);
       compCtx.restore();
       every(2, ()=> tag('Draw','ghost ritas (mask) @', ghostEl.currentTime?.toFixed?.(2), 'fade=', ghostFade.toFixed(2)));
     } else {
@@ -792,8 +792,8 @@ function compositeFrame(){
       ghostFade = Math.min(1, ghostFade + GHOST_FADE_IN);
       const ghostOverlayAlpha = Math.max(0.08, 1 - ghostBgAlpha) * ghostFade;
       compCtx.save();
-      compCtx.globalAlpha = ghostOverlayAlpha * ghostAlpha;      /* 🔹 transparens */
-      drawGhostImage(compCtx, 0, 0, composite.width, composite.height); /* 🔹 spegelstöd */
+      compCtx.globalAlpha = ghostOverlayAlpha * ghostAlpha;
+      drawGhostImage(compCtx, 0, 0, composite.width, composite.height);
       compCtx.restore();
       every(2, ()=> tag('Draw','ghost ritas (fallback) @', ghostEl.currentTime?.toFixed?.(2),'α=',(ghostOverlayAlpha*ghostAlpha).toFixed(2)));
     } else {
@@ -802,16 +802,22 @@ function compositeFrame(){
     }
   }
 
-  // Throttle segmentation: var (SEG_EVERY_N+1):e frame
+  // Throttle segmentation: var (SEG_EVERY_N+1):e frame, med lås
   if (segReady && seg && SEG_ENABLED) {
     try {
       composite.__segCounter = (composite.__segCounter || 0) + 1;
-      if (composite.__segCounter % (SEG_EVERY_N + 1) === 0) {
-        seg.send({ image: video });
+      if (!segBusy && composite.__segCounter % (SEG_EVERY_N + 1) === 0) {
+        segBusy = true;
+        seg.send({ image: video }).catch(e=>{
+          console.warn('[MoodCam] Segmentation send() fel – stänger av mask:', e);
+          SEG_ENABLED = false; segReady = false; seg = null; latestMask = null;
+          segBusy = false;
+        });
       }
     } catch (e) {
       console.warn('[MoodCam] Segmentation fel – stänger av mask:', e);
       SEG_ENABLED = false; segReady = false; seg = null; latestMask = null;
+      segBusy = false;
     }
   }
 }
@@ -1225,6 +1231,8 @@ async function setupSegmentation(){
         segReady = true;
       }catch(e){
         console.warn('[Seg] onResults fel:', e);
+      } finally {
+        segBusy = false; // 🔓 klar med denna körning
       }
     });
     segReady = true;
@@ -1235,23 +1243,20 @@ async function setupSegmentation(){
   }
 }
 
-/* ---------- NYTT: Läs alla .mp4 i ghosts/ om möjligt ---------- */
+/* ---------- NYTT: Läs ghost-lista från manifest ---------- */
 async function loadGhostClips(){
   try{
-    const res = await fetch('./ghosts/', { cache: 'no-store' });
+    const res = await fetch('./ghosts/manifest.json', { cache: 'no-store' });
     if (!res.ok) return;
-    const html = await res.text();
-    const links = Array.from(html.matchAll(/href="([^"]+\.mp4)"/gi)).map(m=>m[1]);
-    const cleaned = links.map(u => u.startsWith('ghosts/') ? u : ('ghosts/' + u.replace(/^\.?\//,'')));
-    const uniq = Array.from(new Set(cleaned));
-    if (uniq.length) {
-      GHOST_CLIPS = uniq;
-      tag('Ghost','fann klipp', GHOST_CLIPS);
+    const arr = await res.json();
+    const mp4 = (Array.isArray(arr) ? arr : [])
+      .filter(x => typeof x === 'string' && /\.mp4$/i.test(x))
+      .map(x => x.startsWith('ghosts/') ? x : ('ghosts/' + x.replace(/^\.?\//,'')));
+    if (mp4.length) {
+      GHOST_CLIPS = Array.from(new Set(mp4));
+      tag('Ghost','manifest.json', GHOST_CLIPS);
     }
-  }catch(e){
-    // tyst fallback – behåll default
-    if (DEBUG) console.warn('[Ghost] kunde inte lista katalogen:', e);
-  }
+  }catch(_e){ /* tyst fallback */ }
 }
 
 /* ---------- Init ---------- */
@@ -1395,7 +1400,7 @@ async function init(){
   ghostEl.addEventListener('play', ()=> tag('Ghost','play'));
   ghostEl.addEventListener('pause', ()=> tag('Ghost','pause'));
   ghostEl.addEventListener('error', ()=> console.error('[Ghost] video error', ghostEl.error));
-  document.getElementById('ghostNow').addEventListener('click', ()=> { tag('Ghost','knapp: spela nu'); playGhostOnce(); });
+  document.getElementById('ghostNow').addEventListener('click', ()=> { tag('Ghost','knapp: spela nu (FORCE)'); playGhostOnce(true); }); /* 🔹 FORCE */
 
   // ⛔️ Startläge: av
   ghostEnabled = ghostToggle.checked;       // false
@@ -1417,7 +1422,7 @@ async function init(){
   listCams(1);
   ensureModelsLoading();
   await setupSegmentation();
-  await loadGhostClips(); /* 🔹 försök läsa alla .mp4 */
+  await loadGhostClips(); /* 🔹 läs lista från manifest */
 
   // 🔧 Ladda preset, lås WebGL och koppla UI
   const perfSel = document.getElementById('perfMode');
