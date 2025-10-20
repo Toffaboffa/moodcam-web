@@ -31,14 +31,14 @@
   }
 
   /* ❗Spegelvänd **composite** (det användaren ser), inte <video> */
-  .layer-wrap.mirror #composite { transform: scaleX(-1); }
+  .layer-wrap.mirror #composite { transform: translateZ(0) scaleX(-1); }
 
-  /* Råvideo hålls osynlig men renderas (motverkar svarta frames) */
+  /* Råvideo: osynlig men deltar i layouten (ingen svart bild / inget glapp) */
   #video{
-    opacity:0;
-    position:absolute; inset:0;
-    width:100%; height:100%;
-    object-fit:cover;
+    visibility:hidden;            /* osynlig men layoutar och spelar */
+    position:relative;            /* i normalt flöde så wrap får storlek */
+    width:100%;
+    height:auto;                  /* behåll aspekt, undvik sträckning */
     z-index:0;
     pointer-events:none;
   }
@@ -89,6 +89,7 @@
   #aboutBody ul { padding-left: 18px }
   #aboutBody a { color: var(--fg); text-decoration: underline }
 </style>
+
 
 <script>
   /* ---------- Konsolfilter ---------- */
