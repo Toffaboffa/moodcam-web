@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Vialundskolans MoodCam (v.1.5.3)</title>
+  <title>Vialundskolans MoodCam (v.1.5.4)</title>
   <link rel="icon" href="data:,">
 <style>
   :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
@@ -15,6 +15,8 @@
   .btn:disabled{opacity:.5;cursor:not-allowed}
 
   .layer-wrap{position:relative;display:inline-block;border-radius:12px;overflow:hidden;box-shadow:0 12px 36px rgba(0,0,0,.5);max-width:96vw;max-height:86vh}
+  /* Gör canvas till egna kompositionslager (minskar blink vid alpha/transform) */
+  .layer-wrap canvas{display:block; will-change:transform, opacity; backface-visibility:hidden; contain:paint;}
 
   /* ❗Spegelvänd **composite** (det användaren ser), inte <video> */
   .layer-wrap.mirror #composite { transform: scaleX(-1); }
@@ -728,7 +730,7 @@ function maybeTriggerGhost(now){
 /* Hjälpare: rita ghostEl med ev. spegel (respekterar dx/dy) */
 function drawGhostImage(ctx, dx, dy, dw, dh){
   ctx.save();
-  ctx.filter = CAM_FILTER; // 🆕 matcha live-videons filter
+  ctx.filter = CAM_FILTER; // matcha live-videons filter
   if (ghostMirror){
     ctx.translate(dx + dw, dy);
     ctx.scale(-1, 1);
@@ -742,6 +744,7 @@ function drawGhostImage(ctx, dx, dy, dw, dh){
 /* 🔄 Mjuk övergång för bakgrundens alpha */
 let bgAlphaShown = 1.0;
 const BG_EASE = 0.18;
+let lastHadGhostFrame = false;
 
 /* Rita kompositen */
 function compositeFrame(){
@@ -756,7 +759,7 @@ function compositeFrame(){
   compCtx.clearRect(0,0,composite.width,composite.height);
 
   const hasGhost = (!ghostEl.paused && !ghostEl.ended);
-  const hasGhostFrame = hasGhost && ghostEl.readyState >= 2 && ghostEl.currentTime > 0.02; // 🆕 vänta på första riktiga frame
+  const hasGhostFrame = hasGhost && ghostEl.readyState >= 2 && ghostEl.currentTime > 0.02;
   const hasMask  = !!latestMask;
   const useMask  = SEG_ENABLED && hasMask;
 
@@ -768,8 +771,17 @@ function compositeFrame(){
     ghostFade = hasGhost ? 1 : 0;
   }
 
+  /* Vid första riktiga ghost-framen: hoppa direkt till mål-alpha för bakgrunden
+     för att undvika en enstaka “full-bright” frame. */
+  if (hasGhostFrame && !lastHadGhostFrame) {
+    bgAlphaShown = ghostBgAlpha;
+  }
+  lastHadGhostFrame = hasGhostFrame;
+
   /* --- Mjuk bakgrundsnivå (1.0 -> ghostBgAlpha) --- */
-  const targetBg = (hasGhostFrame && ghostFade > 0.02) ? ghostBgAlpha : 1.0;
+  const targetBg = (hasGhost && ghostFade > 0.02)
+    ? (hasGhostFrame ? ghostBgAlpha : bgAlphaShown)  // håll kvar nivån tills första riktiga ghost-frame
+    : 1.0;
   bgAlphaShown += (targetBg - bgAlphaShown) * BG_EASE;
 
   /* --- MASK-läge: Ghost → Bakgrund (alpha) → Person (alltid opak) --- */
@@ -1263,7 +1275,7 @@ async function loadGhostClips(){
     const arr = await res.json();
     const mp4 = (Array.isArray(arr) ? arr : [])
       .filter(x => typeof x === 'string' && /\.mp4$/i.test(x))
-      .map(x => x.startsWith('ghosts/') ? x : ('ghosts/' + x.replace(/^\.?\//,'')));
+      .map(x => x.startsWith('ghosts/') ? x : ('ghosts/' + x.replace(/^\.?\//,''));
     if (mp4.length) {
       GHOST_CLIPS = Array.from(new Set(mp4));
       tag('Ghost','manifest.json', GHOST_CLIPS);
@@ -1323,7 +1335,7 @@ async function init(){
     if (!el) return;
     el.addEventListener('input', ()=>{
       CAM_FILTER = buildCamFilterString();
-      video.style.filter = CAM_FILTER;
+      // ❌ Inget filter på <video>; vi ritar filtret i canvas
     });
   });
 
@@ -1340,11 +1352,11 @@ async function init(){
     if (h) h.value =   0;
     if (t) t.value =   0;
     CAM_FILTER = buildCamFilterString();
-    video.style.filter = CAM_FILTER;
+    // ❌ Inget filter på <video>
   });
 
   CAM_FILTER = buildCamFilterString();
-  video.style.filter = CAM_FILTER;
+  // ❌ video.style.filter = CAM_FILTER;  (borttagen)
 
   document.getElementById('mirrorX').addEventListener('change', e=>{
     MIRROR = e.target.checked; wrap.classList.toggle('mirror', MIRROR);
