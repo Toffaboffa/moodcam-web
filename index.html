@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Vialundskolans MoodCam (v.1.5.9)</title>
+  <title>Vialundskolans MoodCam (v.1.6)</title>
   <link rel="icon" href="data:,">
 <style>
   :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
@@ -722,7 +722,11 @@ async function playGhostOnce(force=false){
   tag('Ghost', force ? 'startar (FORCE)' : 'startar', src, 'mask=', haveMask);
   ghostEl.src = src;
   ghostEl.loop = false;
-  ghostEl.currentTime = 0;
+
+  // 🆕 v1.6: Nudge bort från t=0 så första frame inte poppar
+  ghostEl.pause();
+  ghostEl.currentTime = 0.03; // ~1–2 frames @ 30–60fps
+  await new Promise(r => ghostEl.addEventListener('seeked', r, { once: true }));
 
   ghostFade = ghostFadeEnabled ? 0 : 1;
 
@@ -795,7 +799,8 @@ function compositeFrame(){
   compCtx.clearRect(0,0,composite.width,composite.height);
 
   const hasGhost = (!ghostEl.paused && !ghostEl.ended);
-  const hasGhostFrame = hasGhost && ghostEl.readyState >= 2 && ghostEl.currentTime > 0.02;
+  // 🆕 v1.6: Ta bort currentTime>0.02 – låt första frame följa alpha direkt
+  const hasGhostFrame = hasGhost && ghostEl.readyState >= 2;
   const hasMask  = !!latestMask;
   const useMask  = SEG_ENABLED && hasMask;
 
@@ -816,6 +821,7 @@ function compositeFrame(){
     // 1) Spöket bakom
     if (hasGhostFrame && ghostFade > 0 && ghostOpacity > 0){
       compCtx.save();
+      compCtx.globalCompositeOperation = 'source-over'; // 🆕 v1.6: defensivt
       compCtx.globalAlpha = ghostFade * ghostOpacity;
       drawGhostImage(compCtx, 0, 0, composite.width, composite.height);
       compCtx.restore();
@@ -855,6 +861,7 @@ function compositeFrame(){
     if (hasGhostFrame && ghostFade > 0 && ghostOpacity > 0) {
       compCtx.save();
       const fallbackAlpha = Math.min(ghostFade * ghostOpacity, 0.65); // mjukare
+      compCtx.globalCompositeOperation = 'source-over'; // 🆕 v1.6: defensivt
       compCtx.globalAlpha = fallbackAlpha;
       drawGhostImage(compCtx, 0, 0, composite.width, composite.height);
       compCtx.restore();
