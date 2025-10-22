@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Vialundskolans MoodCam (v.1.5.8)</title>
+  <title>Vialundskolans MoodCam (v.1.5.9)</title>
   <link rel="icon" href="data:,">
 <style>
   :root{--bg:#0b0f14;--fg:#e7effa;--panel:#0f172a;--panel2:#111827;--border:#1f2937;--accent:#22c55e}
@@ -663,8 +663,9 @@ let ghostFadeEnabled = true;
 let ghostFade = 0;            // 0..1
 const GHOST_FADE_SPEED = 0.08;
 
-/* Klipp */
-let GHOST_CLIPS = ['ghosts/penny1.mp4'];
+/* Klipp + valbar index */
+let GHOST_CLIPS = ['ghosts/penny1.mp4']; // fylls från ghosts/manifest.json om den finns
+let SELECTED_GHOST_INDEX = -1;           // -1 = slump, 0..N = valt via 1..9
 
 let seg=null, segReady=false, latestMask=null, segBusy=false;
 let playingGhost=false, lastGhostTs=0;
@@ -672,8 +673,14 @@ let minGapMs=120000;
 
 function modeToAvgSec(m){ if (m==='rare') return 3600; if (m==='often') return 600; return 1800; }
 
-/* ▶️ Välj klipp & spela */
-function pickGhost(){ return GHOST_CLIPS[Math.floor(Math.random()*GHOST_CLIPS.length)]; }
+/* Namn + val-aware picker */
+const ghostName = p => (p||'').split('/').pop().replace(/\.[^/.]+$/, '');
+function pickGhost(){
+  if (SELECTED_GHOST_INDEX >= 0 && SELECTED_GHOST_INDEX < GHOST_CLIPS.length) {
+    return GHOST_CLIPS[SELECTED_GHOST_INDEX];
+  }
+  return GHOST_CLIPS[Math.floor(Math.random()*GHOST_CLIPS.length)];
+}
 
 /* ⏳ One-shot-maskväntare för ghost-start */
 let __waitingForFirstMask = null;
@@ -1034,6 +1041,7 @@ async function tick(){
         const eyeD = dist(Leye, Reye);
         const angle= Math.atan2(Reye.y - Leye.y, Reye.x - Leye.x);
         const mouth = lm.getMouth?.();
+        the_mouth = mouth;
         const mL = mouth ? mouth[0] : null;
         const mR = mouth ? mouth[6] : null;
         const mouthC = (mL && mR) ? mid(mL, mR) : null;
@@ -1306,6 +1314,12 @@ async function loadGhostClips(){
     if (mp4.length) {
       GHOST_CLIPS = Array.from(new Set(mp4));
       tag('Ghost','manifest.json', GHOST_CLIPS);
+
+      // Liten nyckelkarta i konsolen
+      const map = GHOST_CLIPS.slice(0,9).map((p,i)=> `${i+1}: ${ghostName(p)}`).join('  ·  ');
+      console.log('%c[Ghost] Valbara klipp (1–9):', 'color:#7dd3fc');
+      console.log(map);
+      console.log('Tips: [1–9]=välj klipp, 0=rensa, G=spela (valt/slump), P=spela valt.');
     }
   }catch(_e){ /* tyst fallback */ }
 }
@@ -1494,7 +1508,12 @@ async function init(){
     applyPreset(m);
   });
 
-  /* ⌨️ HEMLIG TANGENT: G = spela spöke direkt (force) */
+  /* ⌨️ HEMLIGA TANGENTER:
+     G  = spela (force) – använder valt klipp om något är valt, annars slump
+     1–9 = välj specifikt klipp enligt ordningen i ghosts/manifest.json
+     0  = rensa valt (tillbaka till slump)
+     P  = spela valt klipp direkt (om något är valt)
+  */
   document.addEventListener('keydown', (e)=>{
     if (e.repeat) return;
     const active = document.activeElement;
@@ -1502,11 +1521,44 @@ async function init(){
     if (typing) return;
 
     const key = e.key || '';
-    if ((key === 'g' || key === 'G')) {
+
+    if (key === 'g' || key === 'G') {
       e.preventDefault();
       tag('Ghost','KB-trigger (G) – FORCE');
-      playGhostOnce(true);
+      playGhostOnce(true); // pickGhost() hanterar valt/slump
+      return;
     }
+
+    if (/^[1-9]$/.test(key)) {
+      const i = parseInt(key, 10) - 1;
+      if (i < GHOST_CLIPS.length) {
+        SELECTED_GHOST_INDEX = i;
+        console.log(`[Ghost] valt #${i+1}: ${ghostName(GHOST_CLIPS[i])}`);
+      } else {
+        console.log(`[Ghost] tangent ${key} saknar klipp (manifest har ${GHOST_CLIPS.length}).`);
+      }
+      e.preventDefault();
+      return;
+    }
+
+    if (key === '0') {
+      SELECTED_GHOST_INDEX = -1;
+      console.log('[Ghost] val rensat – tillbaka till slump.');
+      e.preventDefault();
+      return;
+    }
+
+    if (key === 'p' || key === 'P') {
+      if (SELECTED_GHOST_INDEX >= 0 && SELECTED_GHOST_INDEX < GHOST_CLIPS.length) {
+        console.log(`[Ghost] spelar valt: #${SELECTED_GHOST_INDEX+1} (${ghostName(GHOST_CLIPS[SELECTED_GHOST_INDEX])})`);
+        playGhostOnce(true);
+        e.preventDefault();
+        return;
+      } else {
+        console.log('[Ghost] inget valt klipp – välj 1–9 först.');
+      }
+    }
+
     if (key === 'Escape'){
       document.getElementById('settings').style.display = 'none';
       document.getElementById('about').style.display = 'none';
