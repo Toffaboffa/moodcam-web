@@ -1048,7 +1048,6 @@ async function tick(){
         const eyeD = dist(Leye, Reye);
         const angle= Math.atan2(Reye.y - Leye.y, Reye.x - Leye.x);
         const mouth = lm.getMouth?.();
-        the_mouth = mouth;
         const mL = mouth ? mouth[0] : null;
         const mR = mouth ? mouth[6] : null;
         const mouthC = (mL && mR) ? mid(mL, mR) : null;
